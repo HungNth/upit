@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,9 +17,11 @@ const (
 )
 
 type UploadOptions struct {
-	FilePath  string
-	Uploader  string
-	Clipboard ClipboardOverride
+	FilePath          string
+	Uploader          string
+	Shortener         string
+	DisableShortening bool
+	Clipboard         ClipboardOverride
 }
 
 type Outcome struct {
@@ -55,6 +58,25 @@ func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, er
 		return Outcome{}, failuref("validation", nil, "uploader %q does not exist", uploaderName)
 	}
 
+	shortenerName := options.Shortener
+	if options.DisableShortening {
+		shortenerName = ""
+	} else if shortenerName == "" {
+		shortenerName = global.DefaultShortener
+	}
+	var selectedShortener *shortener
+	if shortenerName != "" {
+		shorteners, err := loadShortenerConfiguration(home)
+		if err != nil {
+			return Outcome{}, err
+		}
+		candidate, ok := shorteners.Shorteners[shortenerName]
+		if !ok {
+			return Outcome{}, failuref("validation", nil, "shortener %q does not exist", shortenerName)
+		}
+		selectedShortener = &candidate
+	}
+
 	client := *http.DefaultClient
 	if s.Client != nil {
 		client = *s.Client
@@ -66,6 +88,18 @@ func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, er
 	if err != nil {
 		return Outcome{}, err
 	}
+	warnings := []string(nil)
+	if selectedShortener != nil {
+		finalURL, shortenErr := shortenURL(ctx, &client, result.OriginalURL, *selectedShortener)
+		if shortenErr != nil {
+			if errors.Is(shortenErr, context.Canceled) && errors.Is(ctx.Err(), context.Canceled) {
+				return Outcome{}, failure("shortener", "URL shortening canceled", shortenErr)
+			}
+			warnings = append(warnings, fmt.Sprintf("shorten URL: %v", shortenErr))
+		} else {
+			result.FinalURL = finalURL
+		}
+	}
 
 	copyResult := global.CopyToClipboard
 	switch options.Clipboard {
@@ -74,7 +108,7 @@ func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, er
 	case ClipboardDisabled:
 		copyResult = false
 	}
-	outcome := Outcome{Result: result}
+	outcome := Outcome{Result: result, Warnings: warnings}
 	if !copyResult {
 		return outcome, nil
 	}

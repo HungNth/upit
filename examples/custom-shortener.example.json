@@ -1,22 +1,22 @@
 {
     "version": 1,
-    "uploaders": {
-        "personal": {
+    "shorteners": {
+        "shortened": {
             "request": {
                 "method": "POST",
-                "url": "https://upload.example.com/api/upload",
+                "url": "https://example.com/api/v2/links",
                 "headers": {
-                    "Authorization": "Bearer YOUR_API_KEY"
+                    "X-API-KEY": "YOUR_API_KEY"
                 },
                 "query": {},
-                "body": "multipart",
-                "fileField": "file",
-                "fields": {}
+                "data": {
+                    "target": "{input}"
+                }
             },
             "response": {
                 "url": {
                     "type": "json",
-                    "path": "$.url"
+                    "path": "$.link"
                 },
                 "error": {
                     "type": "json",

@@ -17,12 +17,14 @@ const helpText = `Usage:
   upit upload [flags] <file>
 
 Flags:
-  --uploader <name>   use a named Uploader instead of the configured default
-  --json              write machine-readable output
-  --clipboard         copy the Final URL after a successful upload
-  --no-clipboard      disable clipboard copying for this invocation
+  --uploader <name>    use a named Uploader instead of the configured default
+  --shortener <name>   shorten the uploaded URL with a named Shortener
+  --no-shorten         disable URL shortening for this invocation
+  --json               write machine-readable output
+  --clipboard          copy the Final URL after a successful upload
+  --no-clipboard       disable clipboard copying for this invocation
   --timeout <duration> cancel after a Go duration such as 30s or 10m (default: no deadline)
-  -h, --help          show this help
+  -h, --help           show this help
 `
 
 type Runner struct {
@@ -60,9 +62,11 @@ func (r Runner) Run(ctx context.Context, args []string, stdout, stderr io.Writer
 		clipboardOverride = app.ClipboardDisabled
 	}
 	outcome, err := (app.Service{HomeDir: r.HomeDir, Clipboard: r.Clipboard}).Upload(runContext, app.UploadOptions{
-		FilePath:  options.FilePath,
-		Uploader:  options.Uploader,
-		Clipboard: clipboardOverride,
+		FilePath:          options.FilePath,
+		Uploader:          options.Uploader,
+		Shortener:         options.Shortener,
+		DisableShortening: options.NoShorten,
+		Clipboard:         clipboardOverride,
 	})
 	if err != nil {
 		failure := appFailure(err)
@@ -147,6 +151,8 @@ func appFailure(err error) *app.Failure {
 type uploadOptions struct {
 	FilePath    string
 	Uploader    string
+	Shortener   string
+	NoShorten   bool
 	JSON        bool
 	Timeout     time.Duration
 	Clipboard   bool
@@ -162,6 +168,8 @@ func parseUploadArgs(args []string) (uploadOptions, error) {
 	flags.SetOutput(io.Discard)
 	flags.SetInterspersed(true)
 	flags.StringVar(&options.Uploader, "uploader", "", "named uploader")
+	flags.StringVar(&options.Shortener, "shortener", "", "named Shortener")
+	flags.BoolVar(&options.NoShorten, "no-shorten", false, "disable URL shortening")
 	flags.BoolVar(&options.JSON, "json", false, "write JSON output")
 	flags.DurationVar(&options.Timeout, "timeout", 0, "upload timeout")
 	flags.BoolVar(&options.Clipboard, "clipboard", false, "copy the final URL")
@@ -174,6 +182,9 @@ func parseUploadArgs(args []string) (uploadOptions, error) {
 	}
 	if options.Clipboard && options.NoClipboard {
 		return uploadOptions{}, fmt.Errorf("--clipboard and --no-clipboard cannot be used together")
+	}
+	if options.Shortener != "" && options.NoShorten {
+		return uploadOptions{}, fmt.Errorf("--shortener and --no-shorten cannot be used together")
 	}
 	if flags.NArg() != 1 {
 		return uploadOptions{}, fmt.Errorf("upload requires exactly one file")

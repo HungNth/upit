@@ -1,5 +1,6 @@
 {
-  "version": 1,
-  "defaultUploader": "personal",
-  "copyToClipboard": false
+    "version": 2,
+    "defaultUploader": "personal",
+    "defaultShortener": "shortened",
+    "copyToClipboard": false
 }

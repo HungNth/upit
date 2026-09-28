@@ -27,15 +27,15 @@ func loadConfiguration(homeDir string) (settings, uploaderDocument, error) {
 	if err := readJSON(configPath, &global); err != nil {
 		return settings{}, uploaderDocument{}, failuref("config", err, "load %s: %v; copy examples/config.example.json to this location", configPath, err)
 	}
-	if global.Version != 1 {
-		return settings{}, uploaderDocument{}, failuref("validation", nil, "config version = %d, want 1", global.Version)
+	if global.Version != 2 {
+		return settings{}, uploaderDocument{}, failuref("validation", nil, "config version = %d, want 2", global.Version)
 	}
 	if global.DefaultUploader == "" {
 		return settings{}, uploaderDocument{}, failure("validation", "defaultUploader is required", nil)
 	}
 
 	uploaderPath := filepath.Join(configDir, "custom-uploader.json")
-	if err := validateUploaderFilePermissions(uploaderPath); err != nil {
+	if err := validateCredentialFilePermissions(uploaderPath); err != nil {
 		return settings{}, uploaderDocument{}, err
 	}
 	var uploaders uploaderDocument
@@ -56,6 +56,27 @@ func loadConfiguration(homeDir string) (settings, uploaderDocument, error) {
 	return global, uploaders, nil
 }
 
+func loadShortenerConfiguration(homeDir string) (shortenerDocument, error) {
+	path := filepath.Join(homeDir, ".config", "upit", "custom-shortener.json")
+	if err := validateCredentialFilePermissions(path); err != nil {
+		return shortenerDocument{}, err
+	}
+	var shorteners shortenerDocument
+	if err := readJSON(path, &shorteners); err != nil {
+		return shortenerDocument{}, failuref("config", err, "load %s: %v; copy examples/custom-shortener.example.json to this location", path, err)
+	}
+	if shorteners.Version != 1 {
+		return shortenerDocument{}, failuref("validation", nil, "custom shortener version = %d, want 1", shorteners.Version)
+	}
+	for name, candidate := range shorteners.Shorteners {
+		if err := validateShortener(name, &candidate); err != nil {
+			return shortenerDocument{}, err
+		}
+		shorteners.Shorteners[name] = candidate
+	}
+	return shorteners, nil
+}
+
 func readJSON(path string, target any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -72,7 +93,7 @@ func readJSON(path string, target any) error {
 	return nil
 }
 
-func validateUploaderFilePermissions(path string) error {
+func validateCredentialFilePermissions(path string) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
@@ -118,11 +139,11 @@ func validateUploader(name string, candidate *uploader) error {
 			return failuref("validation", nil, "uploader %q: multipart field names must not be empty", name)
 		}
 	}
-	if err := compileExtractor(name, "response URL", &candidate.Response.URL); err != nil {
+	if err := compileExtractor("uploader", name, "response URL", &candidate.Response.URL); err != nil {
 		return err
 	}
 	if candidate.Response.Error != nil {
-		if err := compileExtractor(name, "response error", candidate.Response.Error); err != nil {
+		if err := compileExtractor("uploader", name, "response error", candidate.Response.Error); err != nil {
 			return err
 		}
 	}
@@ -130,13 +151,52 @@ func validateUploader(name string, candidate *uploader) error {
 	return nil
 }
 
-func compileExtractor(uploaderName, label string, extractor *extractorConfig) error {
+func validateShortener(name string, candidate *shortener) error {
+	if candidate.Request.Method == "" {
+		return failuref("validation", nil, "shortener %q: request method is required", name)
+	}
+	request, err := http.NewRequest(candidate.Request.Method, candidate.Request.URL, nil)
+	if err != nil {
+		return failuref("validation", err, "shortener %q: invalid request method or URL", name)
+	}
+	if request.URL.Scheme != "http" && request.URL.Scheme != "https" || request.URL.Host == "" {
+		return failuref("validation", nil, "shortener %q: request URL must be absolute HTTP(S)", name)
+	}
+	for key, value := range candidate.Request.Headers {
+		if !validHeaderName(key) || strings.ContainsAny(value, "\r\n") {
+			return failuref("validation", nil, "shortener %q: invalid header %q", name, key)
+		}
+		if strings.EqualFold(key, "Content-Type") {
+			return failuref("validation", nil, "shortener %q: Content-Type is owned by Upit for JSON requests", name)
+		}
+	}
+	for key := range candidate.Request.Query {
+		if key == "" {
+			return failuref("validation", nil, "shortener %q: query keys must not be empty", name)
+		}
+	}
+	if placeholders := countInputPlaceholders(candidate.Request.Data); placeholders != 1 {
+		return failuref("validation", nil, "shortener %q: data must contain exactly one string value equal to {input}; found %d", name, placeholders)
+	}
+	if err := compileExtractor("shortener", name, "response URL", &candidate.Response.URL); err != nil {
+		return err
+	}
+	if candidate.Response.Error != nil {
+		if err := compileExtractor("shortener", name, "response error", candidate.Response.Error); err != nil {
+			return err
+		}
+	}
+	candidate.sensitiveValues = collectShortenerSensitiveValues(candidate.Request)
+	return nil
+}
+
+func compileExtractor(kind, name, label string, extractor *extractorConfig) error {
 	if extractor.Type != "json" {
-		return failuref("validation", nil, "uploader %q: %s type must be json", uploaderName, label)
+		return failuref("validation", nil, "%s %q: %s type must be json", kind, name, label)
 	}
 	path, err := jsonpath.Parse(extractor.Path)
 	if err != nil {
-		return failuref("validation", err, "uploader %q: invalid %s path", uploaderName, label)
+		return failuref("validation", err, "%s %q: invalid %s path", kind, name, label)
 	}
 	extractor.compiled = path
 	return nil
@@ -158,6 +218,37 @@ func collectSensitiveValues(request requestConfig) []string {
 	for value := range maps.Values(request.Fields) {
 		appendValue(value)
 	}
+	parsed, err := url.Parse(request.URL)
+	if err == nil {
+		for queryValues := range maps.Values(parsed.Query()) {
+			for _, value := range queryValues {
+				appendValue(value)
+			}
+		}
+	}
+	slices.SortFunc(values, func(a, b string) int {
+		if order := cmp.Compare(len(b), len(a)); order != 0 {
+			return order
+		}
+		return cmp.Compare(a, b)
+	})
+	return slices.Compact(values)
+}
+
+func collectShortenerSensitiveValues(request shortenerRequestConfig) []string {
+	values := make([]string, 0, len(request.Headers)+len(request.Query))
+	appendValue := func(value string) {
+		if value != "" && value != "{input}" {
+			values = append(values, value)
+		}
+	}
+	for value := range maps.Values(request.Headers) {
+		appendValue(value)
+	}
+	for value := range maps.Values(request.Query) {
+		appendValue(value)
+	}
+	collectJSONStringValues(request.Data, appendValue)
 	parsed, err := url.Parse(request.URL)
 	if err == nil {
 		for queryValues := range maps.Values(parsed.Query()) {

@@ -59,7 +59,7 @@ func TestUploadPrintsURLFromDefaultUploader(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{
-  "version": 1,
+  "version": 2,
   "defaultUploader": "test",
   "copyToClipboard": false
 }`), 0o600); err != nil {
@@ -144,7 +144,7 @@ func TestUploadUsesNamedUploaderRequestConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{
-  "version": 1,
+  "version": 2,
   "defaultUploader": "default",
   "copyToClipboard": false
 }`), 0o600); err != nil {
@@ -205,6 +205,483 @@ func TestUploadUsesNamedUploaderRequestConfiguration(t *testing.T) {
 	}
 }
 
+func TestUploadShortensWithExplicitNamedShortener(t *testing.T) {
+	const originalURL = "https://files.example.test/original.bin"
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"url":%q}`, originalURL)
+	}))
+	defer uploadServer.Close()
+
+	shortenerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("method = %q, want PATCH", r.Method)
+		}
+		if got := r.URL.Query().Get("workspace"); got != "docs" {
+			t.Errorf("workspace query = %q, want docs", got)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "shortener-secret" {
+			t.Errorf("X-API-Key = %q, want shortener-secret", got)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", got)
+		}
+		var body struct {
+			Target struct {
+				URL string `json:"url"`
+			} `json:"target"`
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode shortener request: %v", err)
+		}
+		if body.Target.URL != originalURL || !body.Enabled {
+			t.Errorf("shortener body = %+v, want original URL and enabled=true", body)
+		}
+		fmt.Fprint(w, `{"data":{"shortUrl":"https://sho.rt/abc123"}}`)
+	}))
+	defer shortenerServer.Close()
+
+	home, filePath := writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+	shorteners := fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "docs": {
+      "request": {
+        "method": "PATCH",
+        "url": %q,
+        "headers": {"X-API-Key": "shortener-secret"},
+        "query": {"workspace": "docs"},
+        "data": {"target": {"url": "{input}"}, "enabled": true}
+      },
+      "response": {
+        "url": {"type": "json", "path": "$.data.shortUrl"}
+      }
+    }
+  }
+}`, shortenerServer.URL)
+	if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, args := range map[string][]string{
+		"before file": {"upload", "--shortener", "docs", filePath},
+		"after file":  {"upload", filePath, "--shortener", "docs"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(
+				context.Background(), args, &stdout, &stderr,
+			)
+
+			if exitCode != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+			}
+			if got, want := stdout.String(), "https://sho.rt/abc123\n"; got != want {
+				t.Errorf("stdout = %q, want %q", got, want)
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
+func TestDefaultShortenerCanBeOverriddenOrDisabled(t *testing.T) {
+	const originalURL = "https://files.example.test/original"
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"url":%q}`, originalURL)
+	}))
+	defer uploadServer.Close()
+	shortenerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/default":
+			fmt.Fprint(w, `{"url":"https://sho.rt/default"}`)
+		case "/override":
+			fmt.Fprint(w, `{"url":"https://sho.rt/override"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer shortenerServer.Close()
+
+	setup := func(t *testing.T) (home, filePath string) {
+		t.Helper()
+		home, filePath = writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+		global := `{
+  "version": 2,
+  "defaultUploader": "test",
+  "defaultShortener": "default",
+  "copyToClipboard": false
+}`
+		if err := os.WriteFile(filepath.Join(home, ".config", "upit", "config.json"), []byte(global), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		shorteners := fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "default": {
+      "request": {"method": "POST", "url": %q, "data": {"url": "{input}"}},
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    },
+    "override": {
+      "request": {"method": "POST", "url": %q, "data": {"url": "{input}"}},
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    }
+  }
+}`, shortenerServer.URL+"/default", shortenerServer.URL+"/override")
+		if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return home, filePath
+	}
+	run := func(t *testing.T, home string, args []string, want string) {
+		t.Helper()
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(context.Background(), args, &stdout, &stderr)
+		if exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+		}
+		if got := strings.TrimSpace(stdout.String()); got != want {
+			t.Errorf("stdout = %q, want %q", got, want)
+		}
+	}
+
+	t.Run("configured default", func(t *testing.T) {
+		home, filePath := setup(t)
+		run(t, home, []string{"upload", filePath}, "https://sho.rt/default")
+	})
+	t.Run("explicit override", func(t *testing.T) {
+		home, filePath := setup(t)
+		run(t, home, []string{"upload", "--shortener", "override", filePath}, "https://sho.rt/override")
+	})
+	t.Run("disabled without loading Shortener file", func(t *testing.T) {
+		home, filePath := setup(t)
+		if err := os.Remove(filepath.Join(home, ".config", "upit", "custom-shortener.json")); err != nil {
+			t.Fatal(err)
+		}
+		run(t, home, []string{"upload", filePath, "--no-shorten"}, originalURL)
+	})
+}
+
+func TestShortenerSelectionFlagsConflict(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := (cli.Runner{}).Run(
+		context.Background(), []string{"upload", "file.bin", "--shortener", "docs", "--no-shorten"}, &stdout, &stderr,
+	)
+
+	if exitCode != 2 {
+		t.Fatalf("exit code = %d, want 2", exitCode)
+	}
+	if !strings.Contains(stderr.String(), "--shortener and --no-shorten cannot be used together") {
+		t.Errorf("stderr = %q, want conflicting Shortener flags", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestShortenerFailureFallsBackWithoutLeakingSecrets(t *testing.T) {
+	const originalURL = "https://files.example.test/original"
+	var uploadCalls atomic.Int32
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		uploadCalls.Add(1)
+		fmt.Fprintf(w, `{"url":%q}`, originalURL)
+	}))
+	defer uploadServer.Close()
+	var shortenerCalls atomic.Int32
+	shortenerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		shortenerCalls.Add(1)
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":"header-secret query-secret body-secret endpoint-secret"}`)
+	}))
+	defer shortenerServer.Close()
+
+	home, filePath := writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+	shorteners := fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "limited": {
+      "request": {
+        "method": "POST",
+        "url": %q,
+        "headers": {"Authorization": "header-secret"},
+        "query": {"token": "query-secret"},
+        "data": {"target": "{input}", "note": "body-secret"}
+      },
+      "response": {
+        "url": {"type": "json", "path": "$.url"},
+        "error": {"type": "json", "path": "$.error"}
+      }
+    }
+  }
+}`, shortenerServer.URL+"/links?key=endpoint-secret")
+	if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(
+		context.Background(), []string{"upload", filePath, "--shortener", "limited", "--json"}, &stdout, &stderr,
+	)
+
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	wantJSON := `{"success":true,"originalUrl":"https://files.example.test/original","finalUrl":"https://files.example.test/original"}` + "\n"
+	if got := stdout.String(); got != wantJSON {
+		t.Errorf("stdout = %q, want %q", got, wantJSON)
+	}
+	if !strings.HasPrefix(stderr.String(), "Warning: shorten URL: ") {
+		t.Errorf("stderr = %q, want Shortener warning", stderr.String())
+	}
+	for _, secret := range []string{"header-secret", "query-secret", "body-secret", "endpoint-secret"} {
+		if strings.Contains(stderr.String(), secret) {
+			t.Errorf("stderr leaked %q: %q", secret, stderr.String())
+		}
+	}
+	if got := uploadCalls.Load(); got != 1 {
+		t.Errorf("upload calls = %d, want 1", got)
+	}
+	if got := shortenerCalls.Load(); got != 1 {
+		t.Errorf("Shortener calls = %d, want 1", got)
+	}
+}
+
+func TestShortenerDeadlineFallsBackToOriginalURL(t *testing.T) {
+	const originalURL = "https://files.example.test/original"
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"url":%q}`, originalURL)
+	}))
+	defer uploadServer.Close()
+	canceled := make(chan struct{})
+	shortenerServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		r.Body.Close()
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer shortenerServer.Close()
+
+	home, filePath := writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+	shorteners := fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "slow": {
+      "request": {"method": "POST", "url": %q, "data": {"url": "{input}"}},
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    }
+  }
+}`, shortenerServer.URL)
+	if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(
+		context.Background(), []string{"upload", filePath, "--shortener", "slow", "--timeout", "100ms"}, &stdout, &stderr,
+	)
+
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != originalURL {
+		t.Errorf("stdout = %q, want Original URL", got)
+	}
+	if !strings.HasPrefix(stderr.String(), "Warning: shorten URL: ") {
+		t.Errorf("stderr = %q, want Shortener deadline warning", stderr.String())
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("Shortener endpoint did not observe deadline cancellation")
+	}
+}
+
+func TestShortenerResponseFailuresFallBack(t *testing.T) {
+	const originalURL = "https://files.example.test/original"
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"url":%q}`, originalURL)
+	}))
+	defer uploadServer.Close()
+
+	tests := map[string]struct {
+		responsePath string
+		handler      http.HandlerFunc
+		wantWarning  string
+	}{
+		"oversized response": {
+			responsePath: "$.url",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, strings.Repeat("x", (1<<20)+1))
+			},
+			wantWarning: "exceeds 1 MiB",
+		},
+		"invalid JSON": {
+			responsePath: "$.url",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, `{`)
+			},
+			wantWarning: "decode shortener response",
+		},
+		"multiple extracted URLs": {
+			responsePath: "$.urls[*]",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, `{"urls":["https://sho.rt/a","https://sho.rt/b"]}`)
+			},
+			wantWarning: "selected 2 values",
+		},
+		"invalid Final URL": {
+			responsePath: "$.url",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, `{"url":"ftp://sho.rt/a"}`)
+			},
+			wantWarning: "absolute HTTP(S) URL",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			shortenerServer := httptest.NewServer(test.handler)
+			defer shortenerServer.Close()
+			home, filePath := writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+			shorteners := fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "broken": {
+      "request": {"method": "POST", "url": %q, "data": {"url": "{input}"}},
+      "response": {"url": {"type": "json", "path": %q}}
+    }
+  }
+}`, shortenerServer.URL, test.responsePath)
+			if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(
+				context.Background(), []string{"upload", filePath, "--shortener", "broken"}, &stdout, &stderr,
+			)
+			if exitCode != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+			}
+			if got := strings.TrimSpace(stdout.String()); got != originalURL {
+				t.Errorf("stdout = %q, want Original URL", got)
+			}
+			if !strings.Contains(stderr.String(), test.wantWarning) {
+				t.Errorf("stderr = %q, want %q", stderr.String(), test.wantWarning)
+			}
+		})
+	}
+}
+
+func TestShortenerConfigurationIsValidatedBeforeUpload(t *testing.T) {
+	var uploadCalled atomic.Bool
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		uploadCalled.Store(true)
+		fmt.Fprint(w, `{"url":"https://files.example.test/original"}`)
+	}))
+	defer uploadServer.Close()
+
+	home, filePath := writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+	shorteners := `{
+  "version": 1,
+  "shorteners": {
+    "selected": {
+      "request": {
+        "method": "POST",
+        "url": "https://short.example.test/links",
+        "data": {"target": "{input}"}
+      },
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    },
+    "broken": {
+      "request": {
+        "method": "POST",
+        "url": "https://short.example.test/links",
+        "data": {"target": "literal"}
+      },
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(
+		context.Background(), []string{"upload", filePath, "--shortener", "selected"}, &stdout, &stderr,
+	)
+
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr = %q", exitCode, stderr.String())
+	}
+	if uploadCalled.Load() {
+		t.Fatal("upload endpoint was called before all Shorteners were valid")
+	}
+	if !strings.Contains(stderr.String(), `shortener "broken": data must contain exactly one`) {
+		t.Errorf("stderr = %q, want invalid unused Shortener error", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestUploadRejectsUnsafeShortenerFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file modes are not enforced on Windows")
+	}
+
+	var uploadCalled atomic.Bool
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		uploadCalled.Store(true)
+	}))
+	defer uploadServer.Close()
+
+	home, filePath := writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+	path := filepath.Join(home, ".config", "upit", "custom-shortener.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": 1,
+  "shorteners": {
+    "selected": {
+      "request": {
+        "method": "POST",
+        "url": "https://short.example.test/links",
+        "data": {"target": "{input}"}
+      },
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(
+		context.Background(), []string{"upload", filePath, "--shortener", "selected"}, &stdout, &stderr,
+	)
+
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr = %q", exitCode, stderr.String())
+	}
+	if uploadCalled.Load() {
+		t.Fatal("upload endpoint was called with unsafe Shortener permissions")
+	}
+	if !strings.Contains(stderr.String(), "chmod 600") {
+		t.Errorf("stderr = %q, want chmod guidance", stderr.String())
+	}
+}
+
 func TestExampleConfigurationPassesStrictLoading(t *testing.T) {
 	home := t.TempDir()
 	configDir := filepath.Join(home, ".config", "upit")
@@ -237,6 +714,42 @@ func TestExampleConfigurationPassesStrictLoading(t *testing.T) {
 	}
 }
 
+func TestUploadRejectsGlobalConfigV1BeforeNetwork(t *testing.T) {
+	var called atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called.Store(true)
+		fmt.Fprint(w, `{"url":"https://files.example.test/legacy"}`)
+	}))
+	defer server.Close()
+
+	home, filePath := writeBasicUploadFixture(t, server.URL, "$.url", "")
+	if err := os.WriteFile(filepath.Join(home, ".config", "upit", "config.json"), []byte(`{
+  "version": 1,
+  "defaultUploader": "test",
+  "copyToClipboard": false
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := (cli.Runner{HomeDir: func() (string, error) { return home, nil }}).Run(
+		context.Background(), []string{"upload", filePath}, &stdout, &stderr,
+	)
+
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr = %q", exitCode, stderr.String())
+	}
+	if called.Load() {
+		t.Fatal("upload endpoint was called for global config version 1")
+	}
+	if !strings.Contains(stderr.String(), "config version = 1, want 2") {
+		t.Errorf("stderr = %q, want version-2 guidance", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
 func TestUploadRejectsUnknownConfigurationFields(t *testing.T) {
 	home := t.TempDir()
 	configDir := filepath.Join(home, ".config", "upit")
@@ -244,7 +757,7 @@ func TestUploadRejectsUnknownConfigurationFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{
-  "version": 1,
+  "version": 2,
   "defaultUploader": "personal",
   "copyToClipboard": false,
   "urlShortener": {"enabled": true}
@@ -279,7 +792,7 @@ func TestUploadRejectsUnsafeUploaderFilePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{
-  "version": 1,
+  "version": 2,
   "defaultUploader": "personal",
   "copyToClipboard": false
 }`), 0o600); err != nil {
@@ -688,6 +1201,186 @@ func TestParentCancellationExits130(t *testing.T) {
 	}
 }
 
+func TestShortenerCancellationExits130WithStageShortener(t *testing.T) {
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"url":"https://files.example.test/original"}`)
+	}))
+	defer uploadServer.Close()
+
+	for _, asJSON := range []bool{false, true} {
+		name := "plain"
+		if asJSON {
+			name = "json"
+		}
+		t.Run(name, func(t *testing.T) {
+			started := make(chan struct{})
+			canceled := make(chan struct{})
+			shortenerServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				r.Body.Close()
+				close(started)
+				<-r.Context().Done()
+				close(canceled)
+			}))
+			defer shortenerServer.Close()
+
+			home, filePath := writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+			shorteners := fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "slow": {
+      "request": {"method": "POST", "url": %q, "data": {"url": "{input}"}},
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    }
+  }
+}`, shortenerServer.URL)
+			if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			runner := cli.Runner{HomeDir: func() (string, error) { return home, nil }}
+			args := []string{"upload", filePath, "--shortener", "slow"}
+			if asJSON {
+				args = append(args, "--json")
+			}
+			exitCodes := make(chan int, 1)
+			go func() {
+				exitCodes <- runner.Run(ctx, args, &stdout, &stderr)
+			}()
+
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("Shortener endpoint never received request")
+			}
+			cancel()
+			select {
+			case exitCode := <-exitCodes:
+				if exitCode != 130 {
+					t.Fatalf("exit code = %d, want 130; stderr = %q", exitCode, stderr.String())
+				}
+			case <-time.After(time.Second):
+				t.Fatal("command did not exit after cancellation")
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want empty", stdout.String())
+			}
+			if asJSON {
+				if !strings.Contains(stderr.String(), `"stage":"shortener"`) {
+					t.Errorf("stderr = %q, want stage shortener", stderr.String())
+				}
+			} else {
+				if !strings.Contains(stderr.String(), "Stage: shortener") {
+					t.Errorf("stderr = %q, want Stage: shortener", stderr.String())
+				}
+			}
+			select {
+			case <-canceled:
+			case <-time.After(time.Second):
+				t.Fatal("Shortener endpoint did not observe cancellation")
+			}
+		})
+	}
+}
+
+func TestClipboardReceivesResolvedFinalURLAndChainsWarnings(t *testing.T) {
+	const originalURL = "https://files.example.test/original"
+	uploadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"url":%q}`, originalURL)
+	}))
+	defer uploadServer.Close()
+	shortenerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/fail" {
+			http.Error(w, "down", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprint(w, `{"url":"https://sho.rt/success"}`)
+	}))
+	defer shortenerServer.Close()
+
+	setup := func(t *testing.T) (home, filePath string) {
+		t.Helper()
+		home, filePath = writeBasicUploadFixture(t, uploadServer.URL, "$.url", "")
+		shorteners := fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "ok": {
+      "request": {"method": "POST", "url": %q, "data": {"url": "{input}"}},
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    },
+    "bad": {
+      "request": {"method": "POST", "url": %q, "data": {"url": "{input}"}},
+      "response": {"url": {"type": "json", "path": "$.url"}}
+    }
+  }
+}`, shortenerServer.URL+"/ok", shortenerServer.URL+"/fail")
+		if err := os.WriteFile(filepath.Join(home, ".config", "upit", "custom-shortener.json"), []byte(shorteners), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return home, filePath
+	}
+
+	t.Run("success copies shortened URL", func(t *testing.T) {
+		home, filePath := setup(t)
+		clipboard := &recordingClipboard{}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		runner := cli.Runner{HomeDir: func() (string, error) { return home, nil }, Clipboard: clipboard}
+		exitCode := runner.Run(context.Background(), []string{"upload", filePath, "--shortener", "ok", "--clipboard"}, &stdout, &stderr)
+		if exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+		}
+		if len(clipboard.values) != 1 || clipboard.values[0] != "https://sho.rt/success" {
+			t.Errorf("clipboard values = %v, want [https://sho.rt/success]", clipboard.values)
+		}
+	})
+
+	t.Run("fallback copies Original URL", func(t *testing.T) {
+		home, filePath := setup(t)
+		clipboard := &recordingClipboard{}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		runner := cli.Runner{HomeDir: func() (string, error) { return home, nil }, Clipboard: clipboard}
+		exitCode := runner.Run(context.Background(), []string{"upload", filePath, "--shortener", "bad", "--clipboard"}, &stdout, &stderr)
+		if exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+		}
+		if len(clipboard.values) != 1 || clipboard.values[0] != originalURL {
+			t.Errorf("clipboard values = %v, want [%s]", clipboard.values, originalURL)
+		}
+		if !strings.Contains(stderr.String(), "Warning: shorten URL: ") {
+			t.Errorf("stderr = %q, want Shortener warning", stderr.String())
+		}
+	})
+
+	t.Run("both warnings emitted when both fail", func(t *testing.T) {
+		home, filePath := setup(t)
+		clipboard := &recordingClipboard{err: errors.New("clipboard broke")}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		runner := cli.Runner{HomeDir: func() (string, error) { return home, nil }, Clipboard: clipboard}
+		exitCode := runner.Run(context.Background(), []string{"upload", filePath, "--shortener", "bad", "--clipboard"}, &stdout, &stderr)
+		if exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+		}
+		if got, want := strings.TrimSpace(stdout.String()), originalURL; got != want {
+			t.Errorf("stdout = %q, want %q", got, want)
+		}
+		if !strings.Contains(stderr.String(), "Warning: shorten URL: ") || !strings.Contains(stderr.String(), "Warning: copy to clipboard: ") {
+			t.Errorf("stderr = %q, want both shorten and clipboard warnings", stderr.String())
+		}
+		shortenIdx := strings.Index(stderr.String(), "Warning: shorten URL: ")
+		clipboardIdx := strings.Index(stderr.String(), "Warning: copy to clipboard: ")
+		if shortenIdx > clipboardIdx {
+			t.Errorf("shortener warning should precede clipboard warning, got: %q", stderr.String())
+		}
+	})
+}
+
 func TestEarlyResponseStopsBlockedMultipartProducer(t *testing.T) {
 	release := make(chan struct{})
 	response := `{"url":"https://files.example.test/too-early"}`
@@ -837,7 +1530,7 @@ func (c *recordingClipboard) Copy(_ context.Context, value string) error {
 func setClipboardDefault(t *testing.T, home string, enabled bool) {
 	t.Helper()
 	config := fmt.Sprintf(`{
-  "version": 1,
+  "version": 2,
   "defaultUploader": "test",
   "copyToClipboard": %t
 }`, enabled)
@@ -856,7 +1549,7 @@ func writeBasicUploadFixture(t *testing.T, endpoint, urlPath, errorPath string) 
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{
-  "version": 1,
+  "version": 2,
   "defaultUploader": "test",
   "copyToClipboard": false
 }`), 0o600); err != nil {
