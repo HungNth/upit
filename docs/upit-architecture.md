@@ -197,27 +197,9 @@ The core packages and CLI must not import Wails packages.
 
 ## 6. Wails Version Policy
 
-The Wails version should be pinned instead of using `latest`.
+Desktop delivery is deferred beyond v0.1, so no Wails version is currently selected.
 
-Current selected version:
-
-```text
-Wails: v3.0.0-beta.25
-```
-
-Example installation:
-
-```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25
-```
-
-Avoid this in reproducible builds:
-
-```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-```
-
-Development, CI, and release builds should use the same exact Wails version.
+When desktop work enters scope, pin one exact Wails version after checking the then-current supported v3 release. Core packages and the CLI must remain independent of Wails.
 
 Upgrade process:
 
@@ -337,24 +319,19 @@ Example:
 
 ```json
 {
+  "version": 1,
   "defaultUploader": "personal",
-  "copyToClipboard": true,
-  "openAfterUpload": false,
-  "urlShortener": {
-    "enabled": true,
-    "default": "kutt",
-    "fallbackToOriginal": true
-  }
+  "copyToClipboard": false
 }
 ```
 
-Suggested responsibilities:
+v0.1 responsibilities:
 
-- Default uploader
+- Configuration version
+- Default Uploader
 - Clipboard behavior
-- Default URL shortener
-- URL-shortener fallback behavior
-- Future application preferences
+
+URL-shortener and open-after-upload settings are not valid v0.1 fields. They require a later versioned schema.
 
 Clipboard behavior must be optional because headless servers may not have a graphical clipboard service.
 
@@ -362,7 +339,7 @@ Clipboard behavior must be optional because headless servers may not have a grap
 
 ## 10. `custom-uploader.json`
 
-`custom-uploader.json` stores uploader and URL-shortener definitions.
+In v0.1, `custom-uploader.json` stores Uploader definitions. Later versions may add URL-shortener definitions through an explicit schema version change.
 
 API credentials are stored directly in this file.
 
@@ -371,58 +348,31 @@ Because this file may contain secrets:
 - Never print secrets in logs.
 - Mask sensitive headers in debug output.
 - Do not commit the real file to Git.
-- Apply restrictive file permissions where supported.
+- On Unix, require mode `0600` before using the file.
 - Provide an example file without real credentials.
 
-Example:
+v0.1 example:
 
 ```json
 {
   "version": 1,
   "uploaders": {
     "personal": {
-      "name": "Personal Server",
       "request": {
         "method": "POST",
         "url": "https://upload.example.com/api/upload",
         "headers": {
           "Authorization": "Bearer YOUR_API_KEY"
         },
+        "query": {},
         "body": "multipart",
-        "fileField": "file"
+        "fileField": "file",
+        "fields": {}
       },
       "response": {
         "url": {
           "type": "json",
           "path": "$.url"
-        },
-        "error": {
-          "type": "json",
-          "path": "$.error"
-        }
-      }
-    }
-  },
-  "urlShorteners": {
-    "kutt": {
-      "name": "Kutt",
-      "request": {
-        "method": "POST",
-        "url": "https://thienhung.io.vn/api/v2/links",
-        "headers": {
-          "X-API-Key": "API",
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        "body": "json",
-        "data": {
-          "target": "{input}"
-        }
-      },
-      "response": {
-        "url": {
-          "type": "json",
-          "path": "$.link"
         },
         "error": {
           "type": "json",
@@ -458,9 +408,9 @@ without guessing the format of existing user files.
 
 ## 12. JSON Schema
 
-The project should provide JSON Schema files.
+JSON Schema publication is planned for v0.4 and is not part of the strict runtime validation delivered by v0.1.
 
-Recommended structure:
+Planned structure:
 
 ```text
 schemas/
@@ -494,7 +444,7 @@ The core must be independent from:
 Core responsibility:
 
 ```text
-File + Uploader Profile
+File + Uploader
           ↓
       HTTP Upload
           ↓
@@ -509,7 +459,7 @@ Suggested engine API:
 func (e *Engine) Upload(
     ctx context.Context,
     filePath string,
-    profile Profile,
+    uploader Uploader,
 ) (*UploadResult, error)
 ```
 
@@ -619,7 +569,7 @@ Example:
 func (e *Engine) Upload(
     ctx context.Context,
     filePath string,
-    profile Profile,
+    uploader Uploader,
 ) (*UploadResult, error)
 ```
 
@@ -1330,8 +1280,8 @@ upit/
 │   │   ├── shortener.go
 │   │   └── result.go
 │   │
-│   ├── profile/
-│   │   ├── profile.go
+│   ├── uploader/
+│   │   ├── uploader.go
 │   │   ├── loader.go
 │   │   └── validator.go
 │   │
@@ -1468,13 +1418,15 @@ Linux server users only need the headless CLI artifact.
 
 ```text
 Go core
-config.json
-custom-uploader.json
-multipart upload
-JSON response parsing
-CLI
-optional clipboard
+versioned strict JSON configuration
+named multipart Uploaders
+RFC 9535 JSONPath response extraction
+CLI plain and JSON output
+optional nonfatal clipboard copying
 streaming uploads
+context cancellation and optional timeout
+structured errors
+OriginalURL and FinalURL (equal in v0.1)
 ```
 
 Primary command:
@@ -1496,27 +1448,25 @@ https://files.example.com/file.zip
 ### v0.1 — Upload Core
 
 - Go upload engine
-- `~/.config/upit/`
-- `config.json`
-- `custom-uploader.json`
-- Multipart upload
-- JSON response parser
-- CLI
-- stdout output
-- Optional clipboard
+- Fixed `~/.config/upit/` path on every OS
+- Strict version-1 `config.json` and `custom-uploader.json`
+- Named multipart Uploaders with headers, query parameters, and static fields
+- RFC 9535 JSONPath via a pinned implementation
+- Plain and JSON CLI output
+- `OriginalURL` and `FinalURL`, equal until shortening exists
+- Optional nonfatal clipboard copying
 - Streaming upload
-- Context cancellation
-- Structured errors
-- Headless Linux support
+- Context cancellation and optional timeout
+- Structured errors and bounded 1 MiB responses
+- Headless Linux support without Wails or WebView
 
 ### v0.2 — URL Shortener
 
 - URL shortener engine
 - `{input}` substitution
 - JSON request body
-- Preserve `OriginalURL`
-- Produce `FinalURL`
-- Fallback to original URL
+- Update `FinalURL` while preserving `OriginalURL`
+- Fallback to `OriginalURL`
 
 ### v0.3 — More Upload Protocols
 
@@ -1656,10 +1606,7 @@ Desktop binary:
 upit-desktop
 
 Wails policy:
-Pin exact version
-
-Current selected Wails version:
-v3.0.0-beta.25
+Deferred with desktop; select and pin an exact version when desktop enters scope
 
 Configuration directory:
 ~/.config/upit/
@@ -1667,7 +1614,7 @@ Configuration directory:
 Global configuration:
 ~/.config/upit/config.json
 
-Uploader and shortener definitions:
+Uploader definitions:
 ~/.config/upit/custom-uploader.json
 
 Credentials:

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "uploaders": {
+    "personal": {
+      "request": {
+        "method": "POST",
+        "url": "https://upload.example.com/api/upload",
+        "headers": {
+          "Authorization": "Bearer YOUR_API_KEY"
+        },
+        "query": {},
+        "body": "multipart",
+        "fileField": "file",
+        "fields": {}
+      },
+      "response": {
+        "url": {
+          "type": "json",
+          "path": "$.url"
+        },
+        "error": {
+          "type": "json",
+          "path": "$.error"
+        }
+      }
+    }
+  }
+}
