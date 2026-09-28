@@ -6,6 +6,7 @@ Upit is a headless-first, cross-platform file uploader. It streams one file to a
 
 - Streaming multipart uploads with bounded memory use
 - Named, configurable HTTP Uploaders
+- Optional URL shortening via named, configurable Shorteners
 - RFC 9535 JSONPath response extraction
 - Plain URL or machine-readable JSON output
 - Context cancellation and optional upload timeout
@@ -13,7 +14,7 @@ Upit is a headless-first, cross-platform file uploader. It streams one file to a
 - Windows, macOS, and headless Linux support
 
 > [!NOTE]
-> v0.1 is CLI-only. URL shortening, additional upload body types, JSON Schema, configuration commands, and the Wails desktop application are later roadmap items.
+> v0.2 is CLI-only. Additional upload body types, JSON Schema, configuration commands, and the Wails desktop application are later roadmap items.
 
 ## Requirements
 
@@ -44,26 +45,29 @@ Upit always reads user configuration from:
 ```text
 ~/.config/upit/
 ├── config.json
-└── custom-uploader.json
+├── custom-uploader.json
+└── custom-shortener.json (optional)
 ```
 
-This path is intentionally the same on Linux, macOS, and Windows. Copy the version-1 examples:
+This path is intentionally the same on Linux, macOS, and Windows. Copy the examples:
 
 ```bash
 mkdir -p ~/.config/upit
 cp examples/config.example.json ~/.config/upit/config.json
 cp examples/custom-uploader.example.json ~/.config/upit/custom-uploader.json
-chmod 600 ~/.config/upit/custom-uploader.json
+cp examples/custom-shortener.example.json ~/.config/upit/custom-shortener.json
+chmod 600 ~/.config/upit/custom-uploader.json ~/.config/upit/custom-shortener.json
 ```
 
-On Unix, Upit refuses to use `custom-uploader.json` when group or other permission bits are present.
+On Unix, Upit refuses to run when `custom-uploader.json` or `custom-shortener.json` (when used) has group or other permission bits present.
 
 ### `config.json`
 
 ```json
 {
-    "version": 1,
+    "version": 2,
     "defaultUploader": "personal",
+    "defaultShortener": "kutt",
     "copyToClipboard": false
 }
 ```
@@ -101,6 +105,39 @@ On Unix, Upit refuses to use `custom-uploader.json` when group or other permissi
 }
 ```
 
+### `custom-shortener.json`
+
+```json
+{
+    "version": 1,
+    "shorteners": {
+        "kutt": {
+            "request": {
+                "method": "POST",
+                "url": "https://kutt.it/api/v2/links",
+                "headers": {
+                    "X-API-KEY": "YOUR_API_KEY"
+                },
+                "query": {},
+                "data": {
+                    "target": "{input}"
+                }
+            },
+            "response": {
+                "url": {
+                    "type": "json",
+                    "path": "$.link"
+                },
+                "error": {
+                    "type": "json",
+                    "path": "$.error"
+                }
+            }
+        }
+    }
+}
+```
+
 Configuration is strict: unknown fields, unsupported versions, invalid request settings, and invalid JSONPath expressions fail before any network request.
 
 ## Usage
@@ -116,6 +153,22 @@ Select another Uploader:
 ```bash
 ./bin/upit upload file.zip --uploader personal
 ```
+
+### URL shortening
+
+Shorten with a named Shortener:
+
+```bash
+./bin/upit upload file.zip --shortener kutt
+```
+
+Disable shortening for one upload when a default Shortener is configured:
+
+```bash
+./bin/upit upload file.zip --no-shorten
+```
+
+If shortening fails at runtime, Upit falls back to the Original URL as the Final URL, writes a warning to stderr (`Warning: shorten URL: ...`), and exits 0. If shortening is interrupted via Ctrl-C, Upit exits 130.
 
 Flags may appear before or after the file path.
 
@@ -169,7 +222,7 @@ A clipboard failure does not invalidate a successful upload. Upit still exits 0,
 
 | Outcome                | stdout                     | stderr                                 | Exit code |
 | ---------------------- | -------------------------- | -------------------------------------- | --------: |
-| Success                | Final URL, or success JSON | Clipboard warning only when applicable |         0 |
+| Success                | Final URL, or success JSON | Shortener/clipboard warning only when applicable |         0 |
 | Runtime/upload failure | Empty                      | Plain or JSON error                    |         1 |
 | Invalid usage          | Empty                      | Usage error                            |         2 |
 | Interrupted upload     | Empty                      | Plain or JSON cancellation error       |       130 |
@@ -178,9 +231,9 @@ Upit never writes progress or logs to stdout.
 
 ## Security
 
-- Credentials are stored directly in `custom-uploader.json`.
+- Credentials are stored directly in `custom-uploader.json` and `custom-shortener.json`.
 - Do not commit real configuration or credentials.
-- Request headers, query values, and multipart fields are treated as sensitive in diagnostics.
+- Request headers, query values, multipart fields, and Shortener request bodies are treated as sensitive in diagnostics.
 - Redirects and automatic retries are disabled.
 - Only HTTP 2xx responses can succeed.
 - Response bodies are limited to 1 MiB.
@@ -192,4 +245,4 @@ go test ./...
 go vet ./...
 ```
 
-Architecture, domain language, and accepted decisions are documented under `docs/`, `CONTEXT.md`, and `.scratch/upit-v0.1/`.
+Architecture, domain language, and accepted decisions are documented under `docs/`, `CONTEXT.md`, `.scratch/upit-v0.1/`, and `.scratch/upit-v0.2/`.

@@ -319,9 +319,9 @@ Example:
 
 ```json
 {
-  "version": 1,
-  "defaultUploader": "personal",
-  "copyToClipboard": false
+    "version": 1,
+    "defaultUploader": "personal",
+    "copyToClipboard": false
 }
 ```
 
@@ -355,32 +355,32 @@ v0.1 example:
 
 ```json
 {
-  "version": 1,
-  "uploaders": {
-    "personal": {
-      "request": {
-        "method": "POST",
-        "url": "https://upload.example.com/api/upload",
-        "headers": {
-          "Authorization": "Bearer YOUR_API_KEY"
-        },
-        "query": {},
-        "body": "multipart",
-        "fileField": "file",
-        "fields": {}
-      },
-      "response": {
-        "url": {
-          "type": "json",
-          "path": "$.url"
-        },
-        "error": {
-          "type": "json",
-          "path": "$.error"
+    "version": 1,
+    "uploaders": {
+        "personal": {
+            "request": {
+                "method": "POST",
+                "url": "https://upload.example.com/api/upload",
+                "headers": {
+                    "Authorization": "Bearer YOUR_API_KEY"
+                },
+                "query": {},
+                "body": "multipart",
+                "fileField": "file",
+                "fields": {}
+            },
+            "response": {
+                "url": {
+                    "type": "json",
+                    "path": "$.url"
+                },
+                "error": {
+                    "type": "json",
+                    "path": "$.error"
+                }
+            }
         }
-      }
     }
-  }
 }
 ```
 
@@ -392,7 +392,7 @@ Configuration schemas should contain a version from the beginning.
 
 ```json
 {
-  "version": 1
+    "version": 1
 }
 ```
 
@@ -611,12 +611,12 @@ Example:
 
 ```json
 {
-  "response": {
-    "url": {
-      "type": "json",
-      "path": "$.data.file.url"
+    "response": {
+        "url": {
+            "type": "json",
+            "path": "$.data.file.url"
+        }
     }
-  }
 }
 ```
 
@@ -656,25 +656,25 @@ Example:
 
 ```json
 {
-  "request": {
-    "method": "POST",
-    "url": "https://thienhung.io.vn/api/v2/links",
-    "headers": {
-      "X-API-Key": "API",
-      "Content-Type": "application/json",
-      "Accept": "application/json"
+    "request": {
+        "method": "POST",
+        "url": "https://thienhung.io.vn/api/v2/links",
+        "headers": {
+            "X-API-Key": "API",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        },
+        "body": "json",
+        "data": {
+            "target": "{input}"
+        }
     },
-    "body": "json",
-    "data": {
-      "target": "{input}"
+    "response": {
+        "url": {
+            "type": "json",
+            "path": "$.link"
+        }
     }
-  },
-  "response": {
-    "url": {
-      "type": "json",
-      "path": "$.link"
-    }
-  }
 }
 ```
 
@@ -716,9 +716,9 @@ Default behavior:
 
 ```json
 {
-  "urlShortener": {
-    "fallbackToOriginal": true
-  }
+    "urlShortener": {
+        "fallbackToOriginal": true
+    }
 }
 ```
 
@@ -824,9 +824,9 @@ Example:
 
 ```json
 {
-  "success": true,
-  "originalUrl": "https://files.example.com/file.zip",
-  "finalUrl": "https://short.example/abc123"
+    "success": true,
+    "originalUrl": "https://files.example.com/file.zip",
+    "finalUrl": "https://short.example/abc123"
 }
 ```
 
@@ -1462,11 +1462,12 @@ https://files.example.com/file.zip
 
 ### v0.2 — URL Shortener
 
-- URL shortener engine
-- `{input}` substitution
-- JSON request body
-- Update `FinalURL` while preserving `OriginalURL`
-- Fallback to `OriginalURL`
+- Named Shortener engine with configurable method, URL, headers, and query parameters
+- `{input}` substitution in JSON request body object
+- Preserves `OriginalURL` and updates `FinalURL`
+- Safe runtime fallback to `OriginalURL` with warning on stderr
+- Dedicated `custom-shortener.json` version 1 and global `config.json` version 2
+- `--shortener <name>` and `--no-shorten` selection flags
 
 ### v0.3 — More Upload Protocols
 
