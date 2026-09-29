@@ -15,7 +15,7 @@ The primary interface is a CLI that can run on:
 - Containers
 - Automation scripts
 
-A Wails 3 desktop application is provided as an optional GUI frontend, but the core application does not depend on Wails.
+A Wails 3 desktop application is a deferred future frontend; v0.3 provides the CLI only, and the core application does not depend on Wails.
 
 Primary workflow:
 
@@ -32,7 +32,7 @@ Optional URL Shortener
  ↓
 Final URL
  ↓
-stdout / clipboard / GUI
+stdout / clipboard
  ↓
 Exit
 ```
@@ -43,6 +43,12 @@ When Upit is not being used, no Upit process should remain running.
 
 ---
 
+## Current v0.3 implementation
+
+This section is authoritative for the implemented CLI runtime. The application module in `internal/app` is the deep upload module: it owns Uploader configuration validation, Request Body Modes, HTTP execution, bounded response handling, Response Extractors, URL validation, and structured failures. The CLI is the external seam; Shortener processing and clipboard work remain coordinated by the application module. v0.3 does not create public `internal/request` or `internal/response` packages, pass-through strategy interfaces, or provider adapters.
+
+Sections that describe a separate Request Builder, Response Parser, or broader package tree are historical architecture proposals. They remain useful roadmap context, but they are not the v0.3 implementation contract; ADR-0008 and this section take precedence.
+
 ## 2. Product Model
 
 Upit is divided into three main layers:
@@ -50,22 +56,20 @@ Upit is divided into three main layers:
 ```text
 Upit
 ├── Core
-│   ├── Upload Engine
+│   ├── Application / deep upload module (`internal/app`)
 │   ├── URL Shortener
-│   ├── Request Builder
-│   ├── Response Parser
 │   └── Configuration
 │
 ├── CLI
 │   └── Primary headless interface
 │
 └── Desktop
-    └── Optional Wails 3 frontend
+    └── Optional Wails 3 frontend (future scope)
 ```
 
 The CLI is considered a first-class interface, not a fallback for the GUI.
 
-The desktop application is only a frontend for users who want a graphical interface for:
+The desktop application is only a future frontend for users who want a graphical interface for:
 
 - Managing settings
 - Managing uploaders
@@ -90,7 +94,7 @@ Upit should:
 - Use Go as the primary language.
 - Keep idle memory usage effectively at zero.
 - Run only when explicitly invoked.
-- Provide an optional Wails 3 desktop frontend.
+- A future optional Wails 3 desktop frontend may be added after the CLI release scope.
 - Keep upload logic independent from CLI and GUI layers.
 
 Upit should not require:
@@ -142,7 +146,7 @@ CLI / SSH / Script / Explorer / Finder / Launcher
                    Exit
 ```
 
-### GUI invocation
+### Deferred GUI invocation (future; not v0.3)
 
 ```text
 User opens Upit Desktop
@@ -162,7 +166,7 @@ There is no `close to tray` behavior.
 
 ---
 
-## 5. Technology Stack
+## 5. Technology Stack (historical roadmap; CLI v0.3 scope)
 
 ### Core and CLI
 
@@ -183,10 +187,10 @@ Go is responsible for:
 - CLI
 - Headless/server operation
 
-### Desktop GUI
+### Desktop GUI (future/deferred; not v0.3)
 
 ```text
-Framework: Wails 3
+Future framework: Wails 3
 ```
 
 Wails must only be used by the desktop frontend.
@@ -195,9 +199,9 @@ The core packages and CLI must not import Wails packages.
 
 ---
 
-## 6. Wails Version Policy
+## 6. Wails Version Policy (deferred; not v0.3)
 
-Desktop delivery is deferred beyond v0.1, so no Wails version is currently selected.
+Desktop delivery is deferred beyond v0.3, so no Wails version is currently selected.
 
 When desktop work enters scope, pin one exact Wails version after checking the then-current supported v3 release. Core packages and the CLI must remain independent of Wails.
 
@@ -221,9 +225,9 @@ When Wails 3 reaches stable `v3.0.0`, Upit can migrate deliberately after testin
 
 ---
 
-## 7. Binary Strategy
+## 7. Binary Strategy (historical desktop roadmap; v0.3 CLI only)
 
-Upit should produce separate binaries for CLI and desktop use.
+v0.3 ships the `upit` CLI binary only. A separate desktop binary is deferred to a future release.
 
 Recommended names:
 
@@ -252,9 +256,9 @@ Example:
 upit upload file.zip
 ```
 
-### `upit-desktop`
+### `upit-desktop` (future/deferred; not v0.3)
 
-The optional Wails desktop application.
+The future optional Wails desktop application (not part of v0.3).
 
 Properties:
 
@@ -492,9 +496,11 @@ Those actions belong to higher layers.
 
 ---
 
-## 15. Request Builder
+## 15. Proposed Request Builder (deferred; not v0.3)
 
 HTTP request construction should be separated from the upload engine.
+
+This is a historical proposal. v0.3 keeps request construction inside the deep upload module in `internal/app`; do not create the package split below for the implemented release.
 
 Suggested structure:
 
@@ -583,9 +589,11 @@ Benefits:
 
 ---
 
-## 18. Response Parser
+## 18. Proposed Response Parser (deferred; not v0.3)
 
 Response parsing should be independent from request logic.
+
+This is a historical proposal. v0.3 keeps response handling and Response Extractors inside the deep upload module in `internal/app`; do not create the package split below for the implemented release.
 
 Suggested structure:
 
@@ -624,9 +632,11 @@ Different upload APIs should be handled through configuration instead of hardcod
 
 ---
 
-## 19. URL Shortener
+## 19. URL Shortener (v0.2 historical schema; still version 1 in v0.3)
 
 URL shortening is a separate post-processing step.
+
+This section records the implemented v0.2 Shortener contract. It is retained for compatibility context; v0.3 does not expand Shortener request body or Response Extractor capabilities.
 
 It must not be embedded inside the upload engine.
 
@@ -661,10 +671,8 @@ Example:
         "url": "https://thienhung.io.vn/api/v2/links",
         "headers": {
             "X-API-Key": "API",
-            "Content-Type": "application/json",
             "Accept": "application/json"
         },
-        "body": "json",
         "data": {
             "target": "{input}"
         }
@@ -736,7 +744,7 @@ Continue successfully
 
 ---
 
-## 22. Application Service Layer
+## 22. Application Service Layer (historical GUI proposal; v0.3 uses internal/app)
 
 Create an application layer between interfaces and engines.
 
@@ -877,7 +885,7 @@ This makes Upit suitable for:
 
 Clipboard integration is a post-action, not part of upload success.
 
-Desktop flow:
+Deferred desktop clipboard flow (future; not v0.3):
 
 ```text
 Upload
@@ -910,7 +918,7 @@ Therefore clipboard failure must not invalidate a successful upload unless the u
 
 ---
 
-## 26. Desktop GUI with Wails 3
+## 26. Deferred desktop architecture (not v0.3)
 
 Wails is only a frontend layer.
 
@@ -955,7 +963,7 @@ It should not execute the CLI binary as a subprocess for normal operations.
 
 ---
 
-## 27. Separate CLI and GUI Runtime Paths
+## 27. Deferred desktop runtime paths (not v0.3)
 
 The CLI must not initialize Wails or WebView.
 
@@ -1091,7 +1099,7 @@ The Docker image must not include Wails or WebView dependencies.
 
 ---
 
-## 31. No System Tray
+## 31. No System Tray (CLI v0.3; desktop roadmap deferred)
 
 System tray support is intentionally removed.
 
@@ -1108,7 +1116,7 @@ Continuous RAM usage
 Instead:
 
 ```text
-Need settings?
+Future desktop settings flow (deferred; not v0.3):
 → Launch upit-desktop.
 
 Need upload?
@@ -1253,8 +1261,10 @@ Secrets must never appear in error output.
 
 ---
 
-## 38. Suggested Project Structure
+## 38. Proposed Project Structure (historical; not v0.3)
 
+
+This package tree predates the implemented v0.3 seam. It is retained as roadmap context only; v0.3 uses the `internal/app` deep upload module described above.
 ```text
 upit/
 ├── cmd/
@@ -1325,7 +1335,7 @@ upit/
 
 ---
 
-## 39. Dependency Boundaries
+## 39. Dependency Boundaries (CLI v0.3; GUI future)
 
 Main dependency rule:
 
@@ -1363,7 +1373,7 @@ desktop environment
 
 ---
 
-## 40. Build Strategy
+## 40. Build Strategy (v0.3 CLI only; desktop deferred)
 
 CLI build:
 
@@ -1385,7 +1395,7 @@ The two build paths should remain independent.
 
 ---
 
-## 41. Release Strategy
+## 41. Release Strategy (historical roadmap; not v0.3)
 
 Recommended CLI/headless release artifacts:
 
@@ -1412,7 +1422,7 @@ Linux server users only need the headless CLI artifact.
 
 ---
 
-## 42. Initial MVP
+## 42. Initial MVP (historical v0.1; v0.3 status follows above)
 
 ### v0.1
 
@@ -1443,7 +1453,7 @@ https://files.example.com/file.zip
 
 ---
 
-## 43. Suggested Roadmap
+## 43. Roadmap and release status
 
 ### v0.1 — Upload Core
 
@@ -1469,15 +1479,18 @@ https://files.example.com/file.zip
 - Dedicated `custom-shortener.json` version 1 and global `config.json` version 2
 - `--shortener <name>` and `--no-shorten` selection flags
 
-### v0.3 — More Upload Protocols
+### v0.3 — More Upload Protocols (implemented)
 
-- Binary body
-- Form body
-- JSON body
-- Header parser
-- Regex parser
-- Response body parser
-- Improved validation
+- `custom-uploader.json` is version 2; version 1 is rejected without migration or compatibility fallback
+- Request Body Modes are `multipart`, `binary`, `form`, and `json`
+- Multipart remains streamed file-part upload; binary streams exact file bytes with default or configured media type
+- Form and JSON require valid UTF-8 input, exactly one full-string `{input}` value, and bounded-memory two-pass transformation
+- Response Extractors are JSONPath `json`, response `header`, RE2 `regex`, and trimmed UTF-8 `body`
+- URL extraction requires one absolute HTTP(S) URL; error extraction only improves diagnostics
+- Only 2xx responses succeed; redirects and retries remain disabled; response bodies remain limited to 1 MiB
+- Generated Content-Type values are owned by multipart, form, and JSON modes; binary may configure a valid media type
+- Managed transport headers and incompatible mode/extractor fields are rejected during whole-document validation
+- CLI flags, output/result fields, Shortener version 1, and the headless runtime remain unchanged
 
 ### v0.4 — Configuration Management
 
@@ -1515,32 +1528,24 @@ All integrations should invoke Upit on demand.
 
 ---
 
-## 44. Final Architecture Summary
+## 44. Final Architecture Summary (v0.3 current seam)
 
 ```text
-                         ┌─────────────────────┐
-                         │  upit-desktop       │
-                         │  Wails 3 frontend   │
-                         └──────────┬──────────┘
-                                    │
-                              Wails bindings
-                                    │
-                                    ▼
-┌──────────────────┐          ┌───────────────┐
-│      upit CLI    │─────────▶│  App Service  │
-│ headless/server  │          └───────┬───────┘
-└──────────────────┘                  │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-              Upload Engine     URL Shortener     Clipboard Adapter
-                    │                 │
-                    └────────┬────────┘
-                             │
-                     Shared HTTP Layer
-                             │
-                   ┌─────────┴─────────┐
-                   ▼                   ▼
-             Request Builder     Response Parser
+┌──────────────────────────────┐
+│ upit CLI (headless/server)   │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│ Application / deep upload    │
+│ internal/app                 │
+│ request bodies + extractors  │
+└───────┬──────────┬───────────┘
+        ▼          ▼
+    Uploader    Shortener
+        │          │
+        └────┬─────┘
+             ▼
+      Clipboard and output
 ```
 
 Headless/server flow:
@@ -1559,7 +1564,7 @@ stdout
 Exit
 ```
 
-Desktop flow:
+Deferred desktop flow (not v0.3):
 
 ```text
 Launch upit-desktop
@@ -1598,13 +1603,13 @@ Primary interface:
 CLI / headless
 
 Desktop interface:
-Optional Wails 3 application
+Deferred future Wails 3 application (not v0.3)
 
 CLI binary:
 upit
 
 Desktop binary:
-upit-desktop
+Future upit-desktop binary (not v0.3)
 
 Wails policy:
 Deferred with desktop; select and pin an exact version when desktop enters scope
@@ -1658,8 +1663,8 @@ Shortener failure:
 Fallback to original URL by default
 
 GUI behavior:
-Starts only when explicitly opened and exits when closed
+Deferred until desktop scope; not part of v0.3
 
 Core architecture:
-Core Engines → App Service → CLI / Wails Desktop
+internal/app deep upload module → CLI (Wails desktop deferred)
 ```

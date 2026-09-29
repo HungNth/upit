@@ -4,17 +4,18 @@ Upit is a headless-first, cross-platform file uploader. It streams one file to a
 
 ## Features
 
-- Streaming multipart uploads with bounded memory use
-- Named, configurable HTTP Uploaders
+- Streaming multipart and raw-binary uploads with bounded memory
+- UTF-8 URL-encoded form and JSON template uploads with bounded-memory transformation
+- Named, strictly validated HTTP Uploaders with four Request Body Modes
+- JSONPath, response-header, regex, and raw-body Response Extractors
 - Optional URL shortening via named, configurable Shorteners
-- RFC 9535 JSONPath response extraction
 - Plain URL or machine-readable JSON output
-- Context cancellation and optional upload timeout
+- Context cancellation and optional whole-invocation upload timeout
 - Optional, nonfatal clipboard copying
 - Windows, macOS, and headless Linux support
 
 > [!NOTE]
-> v0.2 is CLI-only. Additional upload body types, JSON Schema, configuration commands, and the Wails desktop application are later roadmap items.
+> v0.3 is CLI-only. It adds Uploader body modes and response extractors without changing command flags, output fields, Shortener schema, or desktop scope.
 
 ## Requirements
 
@@ -67,7 +68,7 @@ On Unix, Upit refuses to run when `custom-uploader.json` or `custom-shortener.js
 {
     "version": 2,
     "defaultUploader": "personal",
-    "defaultShortener": "kutt",
+    "defaultShortener": "shortened",
     "copyToClipboard": false
 }
 ```
@@ -76,15 +77,13 @@ On Unix, Upit refuses to run when `custom-uploader.json` or `custom-shortener.js
 
 ```json
 {
-    "version": 1,
+    "version": 2,
     "uploaders": {
         "personal": {
             "request": {
                 "method": "POST",
                 "url": "https://upload.example.com/api/upload",
-                "headers": {
-                    "Authorization": "Bearer YOUR_API_KEY"
-                },
+                "headers": {},
                 "query": {},
                 "body": "multipart",
                 "fileField": "file",
@@ -93,7 +92,7 @@ On Unix, Upit refuses to run when `custom-uploader.json` or `custom-shortener.js
             "response": {
                 "url": {
                     "type": "json",
-                    "path": "$.url"
+                    "path": "$.data.url"
                 },
                 "error": {
                     "type": "json",
@@ -105,13 +104,41 @@ On Unix, Upit refuses to run when `custom-uploader.json` or `custom-shortener.js
 }
 ```
 
+#### Uploader v2 protocol rules
+
+Request Body Modes:
+
+| Mode        | Configuration                                                     | Request body                                             |
+| ----------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
+| `multipart` | `fileField` plus optional string `fields`                         | Streamed multipart file part and literal fields          |
+| `binary`    | No `fileField`, `fields`, or `data`                               | Exact file bytes; defaults to `application/octet-stream` |
+| `form`      | Flat string `fields` with exactly one full-string `{input}`       | UTF-8 file text as `application/x-www-form-urlencoded`   |
+| `json`      | Object `data` with exactly one full-string `{input}` string value | UTF-8 file text JSON-escaped inside the object           |
+
+`multipart`, `form`, and `json` own their generated `Content-Type` and reject a configured override. Binary accepts a valid configured media type. Form and JSON validate the complete file as UTF-8 before the request, then stream the transformed body; empty UTF-8 files are valid. Placeholder substitution is value-only and full-string-only—there is no filename, base64, key, substring, header, query, or URL substitution.
+
+Response Extractors:
+
+| Type     | Fields                                    | Input                                          |
+| -------- | ----------------------------------------- | ---------------------------------------------- |
+| `json`   | `path`                                    | RFC 9535 JSONPath selecting one JSON string    |
+| `header` | `header`                                  | One non-empty response-header value            |
+| `regex`  | `pattern`, optional `group` (default `0`) | First match in the bounded UTF-8 response body |
+| `body`   | none                                      | Trimmed non-empty UTF-8 response body          |
+
+URL extraction always requires one absolute HTTP(S) URL. Error extraction uses the same extractor types only for diagnostics; it never creates success or falls back to another extractor. Only 2xx responses succeed, redirects are not followed, each upload is attempted once, and response bodies are limited to 1 MiB.
+
+The Uploader document is a clean version-2 cutover: version 1 is rejected and is not migrated. Invalid configuration is reported before any endpoint request. Failure stages remain `config`, `validation`, `request`, `network`, `response`, and `parse`; parent cancellation exits 130 while ordinary upload failures exit 1. Endpoint-provided Uploader and Shortener messages are trimmed and normalized to one printable line before configured values are redacted. Shortener fallback remains post-upload behavior and does not turn an Uploader failure into success.
+
+For an existing multipart Uploader, the migration is mechanical: change only the document version from `1` to `2`. Keep its method, URL, headers, query, `fileField`, fields, JSONPath URL extractor, and optional JSONPath error extractor unchanged.
+
 ### `custom-shortener.json`
 
 ```json
 {
     "version": 1,
     "shorteners": {
-        "kutt": {
+        "shortened": {
             "request": {
                 "method": "POST",
                 "url": "https://kutt.it/api/v2/links",
@@ -159,7 +186,7 @@ Select another Uploader:
 Shorten with a named Shortener:
 
 ```bash
-./bin/upit upload file.zip --shortener kutt
+./bin/upit upload file.zip --shortener shortened
 ```
 
 Disable shortening for one upload when a default Shortener is configured:
@@ -220,12 +247,12 @@ A clipboard failure does not invalidate a successful upload. Upit still exits 0,
 
 ## Output contract
 
-| Outcome                | stdout                     | stderr                                 | Exit code |
-| ---------------------- | -------------------------- | -------------------------------------- | --------: |
+| Outcome                | stdout                     | stderr                                           | Exit code |
+| ---------------------- | -------------------------- | ------------------------------------------------ | --------: |
 | Success                | Final URL, or success JSON | Shortener/clipboard warning only when applicable |         0 |
-| Runtime/upload failure | Empty                      | Plain or JSON error                    |         1 |
-| Invalid usage          | Empty                      | Usage error                            |         2 |
-| Interrupted upload     | Empty                      | Plain or JSON cancellation error       |       130 |
+| Runtime/upload failure | Empty                      | Plain or JSON error                              |         1 |
+| Invalid usage          | Empty                      | Usage error                                      |         2 |
+| Interrupted upload     | Empty                      | Plain or JSON cancellation error                 |       130 |
 
 Upit never writes progress or logs to stdout.
 
@@ -233,7 +260,7 @@ Upit never writes progress or logs to stdout.
 
 - Credentials are stored directly in `custom-uploader.json` and `custom-shortener.json`.
 - Do not commit real configuration or credentials.
-- Request headers, query values, multipart fields, and Shortener request bodies are treated as sensitive in diagnostics.
+- Request headers, query values, multipart/form fields, static JSON values, and Shortener request bodies are treated as sensitive in diagnostics.
 - Redirects and automatic retries are disabled.
 - Only HTTP 2xx responses can succeed.
 - Response bodies are limited to 1 MiB.
@@ -245,4 +272,4 @@ go test ./...
 go vet ./...
 ```
 
-Architecture, domain language, and accepted decisions are documented under `docs/`, `CONTEXT.md`, `.scratch/upit-v0.1/`, and `.scratch/upit-v0.2/`.
+Architecture, domain language, and accepted decisions are documented under `docs/`, `CONTEXT.md`, and `.scratch/upit-v0.1/` through `.scratch/upit-v0.3/`.
