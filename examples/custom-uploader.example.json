@@ -16,7 +16,7 @@
             "response": {
                 "url": {
                     "type": "json",
-                    "path": "$.url"
+                    "path": "$.data.url"
                 },
                 "error": {
                     "type": "json",
