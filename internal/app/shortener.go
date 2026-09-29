@@ -145,6 +145,7 @@ func collectJSONStringValues(value any, appendValue func(string)) {
 }
 
 func (s shortener) sanitize(message string) string {
+	message = normalizeProviderMessage(message)
 	for _, sensitive := range s.sensitiveValues {
 		message = strings.ReplaceAll(message, sensitive, "[REDACTED]")
 	}
@@ -157,5 +158,5 @@ func networkErrorMessage(err error) string {
 	if errors.As(err, &urlError) {
 		message = urlError.Err.Error()
 	}
-	return message
+	return normalizeProviderMessage(message)
 }

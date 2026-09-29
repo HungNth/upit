@@ -66,7 +66,7 @@ func TestUploadPrintsURLFromDefaultUploader(t *testing.T) {
 		t.Fatal(err)
 	}
 	customUploaders := fmt.Sprintf(`{
-  "version": 1,
+  "version": 2,
   "uploaders": {
     "test": {
       "request": {
@@ -151,7 +151,7 @@ func TestUploadUsesNamedUploaderRequestConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	customUploaders := fmt.Sprintf(`{
-  "version": 1,
+  "version": 2,
   "uploaders": {
     "default": {
       "request": {
@@ -689,8 +689,9 @@ func TestExampleConfigurationPassesStrictLoading(t *testing.T) {
 		t.Fatal(err)
 	}
 	for source, destination := range map[string]string{
-		filepath.Join("..", "..", "examples", "config.example.json"):          filepath.Join(configDir, "config.json"),
-		filepath.Join("..", "..", "examples", "custom-uploader.example.json"): filepath.Join(configDir, "custom-uploader.json"),
+		filepath.Join("..", "..", "examples", "config.example.json"):           filepath.Join(configDir, "config.json"),
+		filepath.Join("..", "..", "examples", "custom-uploader.example.json"):  filepath.Join(configDir, "custom-uploader.json"),
+		filepath.Join("..", "..", "examples", "custom-shortener.example.json"): filepath.Join(configDir, "custom-shortener.json"),
 	} {
 		data, err := os.ReadFile(source)
 		if err != nil {
@@ -800,7 +801,7 @@ func TestUploadRejectsUnsafeUploaderFilePermissions(t *testing.T) {
 	}
 	uploaderPath := filepath.Join(configDir, "custom-uploader.json")
 	if err := os.WriteFile(uploaderPath, []byte(`{
-  "version": 1,
+  "version": 2,
   "uploaders": {}
 }`), 0o644); err != nil {
 		t.Fatal(err)
@@ -1561,7 +1562,7 @@ func writeBasicUploadFixture(t *testing.T, endpoint, urlPath, errorPath string) 
         "error": {"type": "json", "path": %q}`, errorPath)
 	}
 	uploaders := fmt.Sprintf(`{
-  "version": 1,
+  "version": 2,
   "uploaders": {
     "test": {
       "request": {
