@@ -1,0 +1,120 @@
+# Request Body Mode precedents for Upit v0.3
+
+This note records primary-source facts relevant to request-body and response-extractor contracts. Sources are ShareX's current source/docs and official `.sxcu` repository examples, plus HTTP standards. It does not propose Upit's full design.
+
+## 1. ShareX body modes and actual dispatch
+
+ShareX documents six custom-uploader body modes: `None`, `MultipartFormData`, `FormURLEncoded`, `JSON`, `XML`, and `Binary`. Its source enum gives the same serialized names and media-type descriptions. [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md), [`Enums.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/Enums.cs)
+
+The important distinction is not only the declared `Body` value but which custom-uploader service receives the input. The service implementations dispatch as follows:
+
+| ShareX service | Body modes accepted by the implementation | What is sent |
+|---|---|---|
+| Custom image uploader | `MultipartFormData`, `Binary`; all other modes throw an unsupported-request-format exception | Multipart sends the input stream as a file part named by `FileFormName`, plus `Arguments`; binary sends the input stream as the whole request content. | 
+| Custom file uploader | `MultipartFormData`, `Binary`; all other modes throw an unsupported-request-format exception | Same multipart/raw-binary behavior as the image uploader. |
+| Custom text uploader | `None`, `MultipartFormData`, `FormURLEncoded`, `JSON`, `XML`, `Binary` | `None` sends no content; multipart sends either only text form fields or a UTF-8 text file part; URL-encoded sends `Arguments`; JSON/XML sends `Data`; binary sends the UTF-8 text in a memory stream. |
+| Custom URL shortener | `None`, `MultipartFormData`, `FormURLEncoded`, `JSON`, `XML`; `Binary` is unsupported | `input` is the URL; multipart has fields only (there is no file stream); URL-encoded uses `Arguments`; JSON/XML uses `Data`. |
+| Custom URL-sharing service | `None`, `MultipartFormData`, `FormURLEncoded`, `JSON`, `XML`; `Binary` is unsupported | Same URL-as-`input`, fields-only behavior as the URL shortener. |
+
+The image/file rows are the direct branches in [`CustomImageUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/ImageUploaders/CustomImageUploader.cs) and [`CustomFileUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/FileUploaders/CustomFileUploader.cs). The text row is implemented in [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs); the URL-shortener and URL-sharing rows are implemented in [`CustomURLShortener.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/URLShorteners/CustomURLShortener.cs) and [`CustomURLSharingService.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/SharingServices/CustomURLSharingService.cs).
+
+### File bytes, parts, fields, and JSON
+
+* For an image/file uploader with `MultipartFormData`, ShareX calls `SendRequestFileAsync` with the caller's `Stream`, file name, required `FileFormName`, and `Arguments`. The actual multipart builder creates ordinary string parts for `Arguments` and a stream-backed file part with `Content-Disposition: form-data; name="<FileFormName>"; filename="<fileName>"`. [`CustomFileUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/FileUploaders/CustomFileUploader.cs), [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+* For an image/file uploader with `Binary`, ShareX passes the caller's stream as the entire request content; it does not wrap it in a form field or JSON property. The implementation supplies a MIME type inferred from the file name to the stream content. [`CustomFileUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/FileUploaders/CustomFileUploader.cs), [`CustomImageUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/ImageUploaders/CustomImageUploader.cs)
+* `FileFormName` is specifically limited to multipart form-data in ShareX's documentation and is only serialized when `Body` is `MultipartFormData`. [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md), [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs)
+* `Arguments` are serialized/used for multipart and URL-encoded bodies; `Data` is serialized/used for JSON and XML bodies. The source's `ShouldSerializeArguments` and `ShouldSerializeData` enforce those pairings. [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs)
+* A JSON body is a text payload generated from `Data`; in text and URL-sharing flows ShareX substitutes `{input}` (text or URL) and `{filename}` and JSON-escapes those substitutions for JSON. There is no file-stream insertion into a JSON property in those implementations. [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs), [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs), [`CustomURLShortener.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/URLShorteners/CustomURLShortener.cs)
+* For a custom text uploader using multipart with an empty `FileFormName`, ShareX sends only the configured form arguments. If `FileFormName` is present, it UTF-8-encodes the text into a `MemoryStream` and sends that as a file part. Its text `Binary` branch likewise UTF-8-encodes text into a `MemoryStream`; it is not a file-uploader raw-byte path. [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs)
+
+### Content-Type ownership in ShareX
+
+ShareX maps multipart, URL-encoded, JSON, XML, and binary body enum values to `multipart/form-data`, `application/x-www-form-urlencoded`, `application/json`, `application/xml`, and `application/octet-stream` in `GetContentType`. However, the file/image `Binary` execution branch does not call `GetContentType`; it passes the MIME type inferred from the file name instead. JSON/XML and URL-encoded paths do use the body-derived content type. [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs), [`CustomFileUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/FileUploaders/CustomFileUploader.cs), [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs), [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+
+ShareX's documentation says configured headers can override default request headers, explicitly including `Content-Type`. Its request builder first sets content defaults and then applies configured headers, attempting request headers and then content headers. The source does not specify a separate conflict-resolution policy for a duplicate or rejected content header; that part is an implementation detail of the underlying .NET header APIs. [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md), [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+
+## 2. ShareX response extraction
+
+ShareX parses `URL`, `ThumbnailURL`, `DeletionURL`, and `ErrorMessage` using its custom syntax. On a successful response, if `URL` is empty, `ParseResponse` assigns the complete response text directly as the result URL. If `URL` is non-empty, only the configured expression is parsed; an empty result from that expression does not trigger the empty-`URL` raw-body fallback. On an unsuccessful response, ShareX parses `ErrorMessage` only when that field is configured and adds it only when the parsed message is non-empty. A null response text is normalized to the empty string before parsing. [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs)
+
+The official syntax documentation describes the same default: if the response contains only a URL, the `URL` field may be left empty and ShareX uses the response automatically. [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md)
+
+### Raw response body
+
+`{response}` returns `ResponseInfo.ResponseText` exactly as the parser receives it. It accepts no required parameters. [`CustomUploaderFunctionResponse.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/Functions/CustomUploaderFunctionResponse.cs), [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md)
+
+### Response header
+
+`{header:name}` requires one parameter. It returns `ResponseInfo.Headers[name]` when the header collection exists, and returns null when the collection is null. There is no response-body fallback in this function. [`CustomUploaderFunctionHeader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/Functions/CustomUploaderFunctionHeader.cs)
+
+Before parsing, ShareX builds `ResponseInfo.Headers` by iterating response and content headers and joining each header's enumerable values with `", "`. Therefore a header expression sees a single flattened string for the ordinary multi-value case, not a list. The source does not define what should win if the same header key is encountered in both enumerations. [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+
+### Regex against the response body
+
+`{regex:pattern}` uses the complete response text as input and `Regex.Match`, so it returns only the first match's complete matched text. `{regex:pattern|group}` returns a numeric capture group when `group` parses as an integer, otherwise a named capture group. The three-parameter form `{regex:input|pattern|group}` supplies explicit input. A missing/empty input or pattern, or a non-matching pattern, returns null. An invalid group access can throw and is converted by `TryParseResponse` into an uploader parsing error. [`CustomUploaderFunctionRegex.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/Functions/CustomUploaderFunctionRegex.cs), [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs)
+
+The current docs show the one-parameter, numeric-group, and named-group forms and say regex is for non-JSON/non-XML response text. [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md)
+
+## 3. Relevant HTTP media and streaming semantics
+
+### `application/octet-stream`
+
+RFC 2046 defines `application/octet-stream` for uninterpreted binary data and recommends offering to write received data to a file or pass it to a user-specified process. [`RFC 2046 §4.5.1`](https://www.rfc-editor.org/rfc/rfc2046.html#section-4.5.1)
+
+### `application/x-www-form-urlencoded`
+
+The WHATWG URL Standard defines the `application/x-www-form-urlencoded` serializer over name/value tuples: names and values are percent-encoded, pairs are joined with `&`, and each pair is `name=value`; its percent-encoding algorithm represents spaces as `+`. [`URL Standard §5.2`](https://url.spec.whatwg.org/#application-x-www-form-urlencoded-serializing), [`URL Standard §1.3`](https://url.spec.whatwg.org/#application-x-www-form-urlencoded-percent-encode-set)
+
+This is a textual name/value representation, not a raw-file or multipart-file representation. ShareX's URL-encoded implementation constructs a query-style string from `Arguments`, encodes it as UTF-8 bytes, and labels the request `application/x-www-form-urlencoded`. [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+
+### `application/json`
+
+RFC 8259 describes JSON as a lightweight, text-based, language-independent data-interchange format and registers `application/json` as the media type for JSON text. [`RFC 8259 §1`](https://www.rfc-editor.org/rfc/rfc8259.html#section-1), [`RFC 8259 §11`](https://www.rfc-editor.org/rfc/rfc8259.html#section-11)
+
+JSON can represent structured values, but neither RFC 8259 nor ShareX's custom-uploader implementation turns an input file stream into a JSON property automatically. In ShareX, JSON custom uploaders send the configured `Data` string after `{input}`/`{filename}` substitution. [`RFC 8259`](https://www.rfc-editor.org/rfc/rfc8259.html), [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs), [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs)
+
+### Content-Type and streaming
+
+HTTP defines message content as a stream of octets after the header section, delineated by message framing. `Content-Type` identifies the media type of the associated representation; a sender that generates content SHOULD send it unless the intended type is unknown, and a recipient MAY assume `application/octet-stream` when it is absent. [`RFC 9110 §6.4`](https://www.rfc-editor.org/rfc/rfc9110.html#section-6.4), [`RFC 9110 §8.3`](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.3)
+
+Thus HTTP itself permits a file to be sent as a stream without first converting it to a byte array. ShareX's implementation does this for file/image multipart and binary uploads: `ProgressStreamContent` reads bounded chunks from the source stream into an array-pool buffer, and `TryComputeLength` supplies the known content length. ShareX requires upload streams to be seekable so it can obtain the length; a non-seekable stream is rejected rather than buffered. [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs), [`ProgressStreamContent.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/Helpers/ProgressStreamContent.cs)
+
+For multipart, RFC 9110 says multipart types encapsulate one or more representations and include a boundary parameter; it specifically identifies `multipart/form-data` as commonly used for form data in a request. [`RFC 9110 §8.3.3`](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.3.3)
+
+The protocol standards establish what the sender must describe, not which application layer owns the `Content-Type` setting. In ShareX, body constructors establish defaults and user-configured headers are exposed as an override mechanism; the exact behavior of conflicting duplicate `Content-Type` values is not specified by the ShareX custom-uploader contract. [`RFC 9110 §8.3`](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.3), [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md), [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+
+## 4. Official uploader examples
+
+These are concrete files from ShareX's first-party [CustomUploaders repository](https://github.com/ShareX/CustomUploaders):
+
+| Mode | Official example | What it demonstrates |
+|---|---|---|
+| Multipart file part | [`0x0.st (Image uploader).sxcu`](https://raw.githubusercontent.com/ShareX/CustomUploaders/master/0x0.st%20(Image%20uploader).sxcu) | `Body: MultipartFormData`, `FileFormName: file`, and regex extraction from a plain response. |
+| Multipart file plus fields | [`Discord webhook (Image uploader).sxcu`](https://raw.githubusercontent.com/ShareX/CustomUploaders/master/Discord%20webhook%20(Image%20uploader).sxcu) | `Arguments` for ordinary fields, `FileFormName: file`, and JSON response extraction. |
+| URL-encoded fields | [`vee.gg.sxcu`](https://raw.githubusercontent.com/ShareX/CustomUploaders/master/vee.gg.sxcu) | `DestinationType: URLShortener`, `Body: FormURLEncoded`, and an `Arguments.link` value containing the input URL. |
+| JSON request body | [`Shlink.sxcu`](https://raw.githubusercontent.com/ShareX/CustomUploaders/master/Shlink.sxcu) | `DestinationType: URLShortener`, JSON `Data` containing the input URL, and JSON response extraction. |
+| JSON URL-sharing body | [`Discord webhook (URL sharing service).sxcu`](https://raw.githubusercontent.com/ShareX/CustomUploaders/master/Discord%20webhook%20(URL%20sharing%20service).sxcu) | URL-sharing input embedded in a JSON `content` field. |
+| Raw binary request body | [`support.discordapp.com.sxcu`](https://raw.githubusercontent.com/ShareX/CustomUploaders/master/support.discordapp.com.sxcu) | `Body: Binary` with `DestinationType` including `FileUploader`; response URL and thumbnail extracted from JSON. |
+
+The repository examples above use legacy `$...$` syntax, while the current documentation and current parser source show brace syntax such as `{json:path}` and `{regex:pattern}`; ShareX's compatibility code migrates old syntax for older-version files. [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md), [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs)
+
+No first-party example was needed to establish the `None` or `XML` dispatch rules: those rules are explicit in the current service source. The official examples survey did not identify a concrete `None` or `XML` `.sxcu` example; treat that as an example gap, not as evidence that the modes are unsupported. The repository's official file listing is the source boundary for that survey. [`CustomUploaders tree`](https://api.github.com/repos/ShareX/CustomUploaders/git/trees/master?recursive=1), [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs), [`CustomURLShortener.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/URLShorteners/CustomURLShortener.cs)
+
+## Contract facts for Upit v0.3
+
+Only the following facts constrain later contract decisions:
+
+1. ShareX has six named body modes: no body, multipart form-data, URL-encoded form, JSON, XML, and binary. [`Enums.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/Enums.cs)
+2. For file/image uploads, only multipart and binary are valid in ShareX's actual service dispatch; URL-encoded, JSON, XML, and no-body modes throw rather than silently changing the upload shape. [`CustomFileUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/FileUploaders/CustomFileUploader.cs), [`CustomImageUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/ImageUploaders/CustomImageUploader.cs)
+3. Multipart file upload means a named file part plus optional string fields; `FileFormName` is required for the file part. Raw binary upload means the file stream is the whole request content, with a MIME type inferred from the file name in ShareX's implementation. [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs), [`CustomFileUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/FileUploaders/CustomFileUploader.cs)
+4. ShareX's file/image request paths stream from a seekable source without materializing the file into a byte array; text paths that need a file-like part instead materialize UTF-8 text bytes. [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs), [`ProgressStreamContent.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/Helpers/ProgressStreamContent.cs), [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs)
+5. Leaving ShareX's result `URL` field empty means “use the complete response body”; an explicit header or regex expression has no documented raw-body fallback when it yields no value. [`CustomUploaderItem.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/CustomUploaderItem.cs)
+6. Header extraction is one named lookup over ShareX's flattened header strings; regex extraction returns the first match or a selected capture group, not a collection of all matches. [`CustomUploaderFunctionHeader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/Functions/CustomUploaderFunctionHeader.cs), [`CustomUploaderFunctionRegex.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/CustomUploader/Functions/CustomUploaderFunctionRegex.cs), [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+7. HTTP requires the sender to describe the representation with `Content-Type` when known; `octet-stream` denotes uninterpreted binary, URL-encoded form is an encoded name/value string, and JSON is a text-based structured format. [`RFC 9110 §8.3`](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.3), [`RFC 2046 §4.5.1`](https://www.rfc-editor.org/rfc/rfc2046.html#section-4.5.1), [`URL Standard §5.2`](https://url.spec.whatwg.org/#application-x-www-form-urlencoded-serializing), [`RFC 8259`](https://www.rfc-editor.org/rfc/rfc8259.html)
+
+### Explicit unknowns
+
+* ShareX source flattens the values yielded for each response-header enumeration, but does not document a stable policy for duplicate header keys encountered across response and content-header collections; do not infer a general multi-value contract beyond the observed `", "` join. [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+* ShareX documents header override support, but its custom-uploader contract does not state whether a conflicting user-supplied `Content-Type` replaces, coexists with, or is rejected after the body-created content type; the exact result depends on the underlying .NET header API path. [`custom-uploader.md`](https://raw.githubusercontent.com/ShareX/sharex.github.io/master/docs/custom-uploader.md), [`Uploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/BaseUploaders/Uploader.cs)
+* The primary sources do not define whether Upit should expose ShareX's XML mode in v0.3; they only establish that ShareX supports it for text/URL-style flows and not for file/image service dispatch. [`Enums.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/Enums.cs), [`CustomTextUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/TextUploaders/CustomTextUploader.cs), [`CustomFileUploader.cs`](https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.UploadersLib/FileUploaders/CustomFileUploader.cs)
+* The primary sources do not define a universal server-side interpretation for an omitted or custom `Content-Type`; RFC 9110 gives the protocol default possibility (`application/octet-stream`) but says the sender SHOULD provide the intended type when known. [`RFC 9110 §8.3`](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.3)
