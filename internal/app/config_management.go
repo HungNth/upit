@@ -71,37 +71,8 @@ func (s Service) ValidateConfiguration() error {
 	if err != nil {
 		return failuref("config", err, "resolve user home directory: %v", err)
 	}
-	global, err := loadGlobalConfiguration(home)
-	if err != nil {
-		return err
-	}
-	globalPath := filepath.Join(home, ".config", "upit", "config.json")
-	globalLocation := configLocation{file: absolutePath(globalPath), path: "$"}
-	if err := validateGlobalStructure(global, globalLocation); err != nil {
-		return err
-	}
-
-	uploaders, err := loadUploaderConfiguration(home)
-	if err != nil {
-		return err
-	}
-	if _, ok := uploaders.Uploaders[global.DefaultUploader]; !ok {
-		return globalLocation.child("defaultUploader").fail(nil, "default Uploader %q does not exist; choose one listed by config list-uploaders", global.DefaultUploader)
-	}
-
-	shorteners, present, err := loadOptionalShortenerConfiguration(home)
-	if err != nil {
-		return err
-	}
-	if global.DefaultShortener != "" {
-		if !present {
-			return globalLocation.child("defaultShortener").fail(nil, "selected default Shortener %q requires custom-shortener.json", global.DefaultShortener)
-		}
-		if _, ok := shorteners.Shorteners[global.DefaultShortener]; !ok {
-			return globalLocation.child("defaultShortener").fail(nil, "default Shortener %q does not exist; choose one listed by config list-shorteners", global.DefaultShortener)
-		}
-	}
-	return nil
+	_, err = loadValidatedConfigurationSet(home)
+	return err
 }
 
 func validateGlobalStructure(global settings, location configLocation) error {
@@ -152,19 +123,11 @@ func loadUploaderConfiguration(homeDir string) (uploaderDocument, error) {
 	if err := readJSON(path, &document); err != nil {
 		return uploaderDocument{}, configurationReadFailure(path, err, "copy examples/custom-uploader.example.json to this location")
 	}
-	location := configLocation{file: absolutePath(path), path: "$.uploaders"}
 	if document.Version != 2 {
 		return uploaderDocument{}, configLocation{file: absolutePath(path), path: "$.version"}.fail(nil, "custom uploader version = %d, want 2; received version %d, expected version 2; automatic migration is unavailable; update version to 2 manually; see schemas/custom-uploader.schema.json", document.Version, document.Version)
 	}
-	if len(document.Uploaders) == 0 {
-		return uploaderDocument{}, location.fail(nil, "at least one Uploader is required; add a named Uploader")
-	}
-	for _, name := range slices.Sorted(maps.Keys(document.Uploaders)) {
-		candidate := document.Uploaders[name]
-		if err := validateUploader(location, name, &candidate); err != nil {
-			return uploaderDocument{}, err
-		}
-		document.Uploaders[name] = candidate
+	if err := validateUploaderDocument(&document, path); err != nil {
+		return uploaderDocument{}, err
 	}
 	return document, nil
 }

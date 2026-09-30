@@ -131,22 +131,26 @@ func (s Service) SetClipboardCopying(enabled bool) (bool, error) {
 }
 
 func refuseUnsafeMutationTarget(path string) (os.FileInfo, error) {
+	return refuseUnsafeDocumentTarget(path, "Global Configuration")
+}
+
+func refuseUnsafeDocumentTarget(path, label string) (os.FileInfo, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, failuref("config", err, "Global Configuration %s does not exist; create it before mutating configuration", absolutePath(path))
+		return nil, failuref("config", err, "%s %s does not exist; create it before mutating configuration", label, absolutePath(path))
 	}
 	if err != nil {
-		return nil, failuref("config", err, "inspect Global Configuration %s: %v", absolutePath(path), err)
+		return nil, failuref("config", err, "inspect %s %s: %v", label, absolutePath(path), err)
 	}
 	linked, err := mutationTargetIsLink(path, info)
 	if err != nil {
-		return nil, failuref("config", err, "inspect Global Configuration links %s: %v", absolutePath(path), err)
+		return nil, failuref("config", err, "inspect %s links %s: %v", label, absolutePath(path), err)
 	}
 	if linked {
-		return nil, failuref("config", nil, "Global Configuration %s is a symlink or reparse-point link; mutation refuses linked targets", absolutePath(path))
+		return nil, failuref("config", nil, "%s %s is a symlink or reparse-point link; mutation refuses linked targets", label, absolutePath(path))
 	}
 	if !info.Mode().IsRegular() {
-		return nil, failuref("config", nil, "Global Configuration %s is not a regular file", absolutePath(path))
+		return nil, failuref("config", nil, "%s %s is not a regular file", label, absolutePath(path))
 	}
 	return info, nil
 }
@@ -160,10 +164,14 @@ func marshalSettings(global settings) ([]byte, error) {
 }
 
 func publishConfiguration(path string, data []byte, targetInfo os.FileInfo) error {
+	return publishDocument(path, data, targetInfo, "Global Configuration")
+}
+
+func publishDocument(path string, data []byte, targetInfo os.FileInfo, label string) error {
 	directory := filepath.Dir(path)
 	staged, err := os.CreateTemp(directory, ".config.json.upit-tmp-*")
 	if err != nil {
-		return failuref("config", err, "stage Global Configuration in %s: %v", absolutePath(directory), err)
+		return failuref("config", err, "stage %s in %s: %v", label, absolutePath(directory), err)
 	}
 	stagedPath := staged.Name()
 	removeStaged := true
@@ -174,26 +182,30 @@ func publishConfiguration(path string, data []byte, targetInfo os.FileInfo) erro
 		}
 	}()
 
-	if err := staged.Chmod(targetInfo.Mode().Perm()); err != nil {
-		return failuref("config", err, "set staged Global Configuration permissions: %v", err)
+	mode := os.FileMode(0o600)
+	if targetInfo != nil {
+		mode = targetInfo.Mode().Perm()
+	}
+	if err := staged.Chmod(mode); err != nil {
+		return failuref("config", err, "set staged %s permissions: %v", label, err)
 	}
 	if _, err := staged.Write(data); err != nil {
-		return failuref("config", err, "write staged Global Configuration: %v", err)
+		return failuref("config", err, "write staged %s: %v", label, err)
 	}
 	if err := staged.Sync(); err != nil {
-		return failuref("config", err, "synchronize staged Global Configuration: %v", err)
+		return failuref("config", err, "synchronize staged %s: %v", label, err)
 	}
 	if err := staged.Close(); err != nil {
-		return failuref("config", err, "close staged Global Configuration: %v", err)
+		return failuref("config", err, "close staged %s: %v", label, err)
 	}
 
 	ambiguous, err := replaceConfigurationFile(stagedPath, path)
 	if err != nil {
 		if ambiguous {
 			removeStaged = false
-			return failuref("config", err, "publish Global Configuration failed; staged recovery file retained at %s", absolutePath(stagedPath))
+			return failuref("config", err, "publish %s failed; staged recovery file retained at %s", label, absolutePath(stagedPath))
 		}
-		return failuref("config", err, "publish Global Configuration failed: %v", err)
+		return failuref("config", err, "publish %s failed: %v", label, err)
 	}
 	removeStaged = false
 	return nil
