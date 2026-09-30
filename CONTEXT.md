@@ -39,3 +39,7 @@ _Avoid_: Result URL, Output URL
 **Manual Upload**:
 An interactive upload initiated by a user for exactly one local file selected through file browsing or drag-and-drop. It may override the Uploader, Shortener, clipboard behavior, and timeout for that upload, and exposes progress, cancellation, warnings, and the resulting Original URL and Final URL.
 _Avoid_: Manual upload UI, GUI upload, Desktop upload
+
+**File Manager Upload**:
+An upload initiated from Windows File Explorer or macOS Finder for exactly one selected regular file. It uses the Global Configuration defaults and completes without opening Manual Upload.
+_Avoid_: Explorer upload, Finder upload, Shell Upload, Direct Upload

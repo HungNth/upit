@@ -1,0 +1,3 @@
+# Use NSServices helper for macOS File Manager Upload
+
+Upit v0.7 targets macOS 14+ on Apple Silicon through a Developer ID-signed and notarized desktop package containing a background-only `NSServices` helper. The helper receives Finder-selected file URLs, invokes the one-shot upload behavior without creating a Wails window, and exposes `Upload with Upit` under Finder Services or Quick Actions. Sandboxed Finder/Share/Action extensions were rejected because their sandbox would not have noninteractive access to the fixed `~/.config/upit/` Configuration Set; the production package therefore remains outside the Mac App Store sandbox and unregisters its Service on uninstall.

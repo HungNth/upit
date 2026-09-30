@@ -23,7 +23,35 @@ const maxResponseSize = 1 << 20
 
 var errResponseBeforeRequestComplete = errors.New("upload endpoint responded before request body completed")
 
-func uploadFile(ctx context.Context, client *http.Client, filePath string, selected uploader) (Result, error) {
+type uploadProgressFunc func(processed, total int64)
+
+const uploadProgressStride = 256 << 10
+
+type uploadProgressReader struct {
+	ctx          context.Context
+	reader       io.Reader
+	total        int64
+	processed    int64
+	lastReported int64
+	progress     uploadProgressFunc
+}
+
+func (r *uploadProgressReader) Read(data []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := r.reader.Read(data)
+	if n > 0 {
+		r.processed += int64(n)
+		if r.progress != nil && (r.processed == r.total || r.processed-r.lastReported >= uploadProgressStride) {
+			r.lastReported = r.processed
+			r.progress(r.processed, r.total)
+		}
+	}
+	return n, err
+}
+
+func uploadFile(ctx context.Context, client *http.Client, filePath string, selected uploader, progress uploadProgressFunc) (Result, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return Result{}, failuref("validation", err, "open upload file: %v", err)
@@ -36,6 +64,9 @@ func uploadFile(ctx context.Context, client *http.Client, filePath string, selec
 	if !info.Mode().IsRegular() {
 		_ = file.Close()
 		return Result{}, failure("validation", "upload path must be a regular file", nil)
+	}
+	if progress != nil {
+		progress(0, info.Size())
 	}
 	if selected.Request.Body == "form" || selected.Request.Body == "json" {
 		if err := validateUTF8File(ctx, file); err != nil {
@@ -89,7 +120,7 @@ func uploadFile(ctx context.Context, client *http.Client, filePath string, selec
 
 	writeDone := make(chan error, 1)
 	go func() {
-		writeErr := writeRequestBody(pipeWriter, multipartWriter, file, filePath, selected.Request)
+		writeErr := writeRequestBody(ctx, pipeWriter, multipartWriter, file, filePath, info.Size(), selected.Request, progress)
 		if writeErr != nil {
 			_ = pipeWriter.CloseWithError(writeErr)
 		} else {
@@ -130,8 +161,9 @@ func uploadFile(ctx context.Context, client *http.Client, filePath string, selec
 	return finishUploadResponse(response, body, selected)
 }
 
-func writeRequestBody(w io.Writer, multipartWriter *multipart.Writer, file *os.File, filePath string, request requestConfig) error {
+func writeRequestBody(ctx context.Context, w io.Writer, multipartWriter *multipart.Writer, file *os.File, filePath string, fileSize int64, request requestConfig, progress uploadProgressFunc) error {
 	defer file.Close()
+	reader := &uploadProgressReader{ctx: ctx, reader: file, total: fileSize, progress: progress}
 	switch request.Body {
 	case "multipart":
 		for _, name := range slices.Sorted(maps.Keys(request.Fields)) {
@@ -143,23 +175,23 @@ func writeRequestBody(w io.Writer, multipartWriter *multipart.Writer, file *os.F
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(part, file); err != nil {
+		if _, err := io.Copy(part, reader); err != nil {
 			return err
 		}
 		return multipartWriter.Close()
 	case "binary":
-		_, err := io.Copy(w, file)
+		_, err := io.Copy(w, reader)
 		return err
 	case "form":
-		return writeFormBody(w, file, request.Fields)
+		return writeFormBody(w, reader, request.Fields)
 	case "json":
-		return writeJSONBody(w, file, request.Data)
+		return writeJSONBody(w, reader, request.Data)
 	default:
 		return fmt.Errorf("unsupported upload body %q", request.Body)
 	}
 }
 
-func writeFormBody(w io.Writer, file *os.File, fields map[string]string) error {
+func writeFormBody(w io.Writer, file io.Reader, fields map[string]string) error {
 	buffered := bufio.NewWriterSize(w, 32<<10)
 	for index, name := range slices.Sorted(maps.Keys(fields)) {
 		if index > 0 {
@@ -195,7 +227,7 @@ func writeFormEncodedString(w io.Writer, value string) error {
 	return nil
 }
 
-func writeFormEncodedFile(w io.Writer, file *os.File) error {
+func writeFormEncodedFile(w io.Writer, file io.Reader) error {
 	reader := bufio.NewReaderSize(file, 32<<10)
 	for {
 		runeValue, size, err := reader.ReadRune()
@@ -253,7 +285,7 @@ func writePercentEncodedByte(w io.Writer, value byte) error {
 	return writeBytes(w, encoded[:])
 }
 
-func writeJSONBody(w io.Writer, file *os.File, data any) error {
+func writeJSONBody(w io.Writer, file io.Reader, data any) error {
 	buffered := bufio.NewWriterSize(w, 32<<10)
 	if err := writeJSONValue(buffered, file, data); err != nil {
 		return err
@@ -261,7 +293,7 @@ func writeJSONBody(w io.Writer, file *os.File, data any) error {
 	return buffered.Flush()
 }
 
-func writeJSONValue(w io.Writer, file *os.File, value any) error {
+func writeJSONValue(w io.Writer, file io.Reader, value any) error {
 	switch value := value.(type) {
 	case map[string]any:
 		if value == nil {
@@ -333,7 +365,7 @@ func writeJSONValue(w io.Writer, file *os.File, value any) error {
 	}
 }
 
-func writeJSONEscapedFile(w io.Writer, file *os.File) error {
+func writeJSONEscapedFile(w io.Writer, file io.Reader) error {
 	reader := bufio.NewReaderSize(file, 32<<10)
 	for {
 		runeValue, size, err := reader.ReadRune()

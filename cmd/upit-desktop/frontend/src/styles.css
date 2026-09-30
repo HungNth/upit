@@ -6,25 +6,82 @@
   --background: #09090b;
   --surface: rgba(24, 24, 27, 0.78);
   --surface-strong: #18181b;
+  --surface-muted: #27272a;
   --border: #27272a;
+  --border-strong: #3f3f46;
   --text: #fafafa;
   --muted: #a1a1aa;
+  --field-label: #d4d4d8;
+  --heading: #e4e4e7;
   --accent: #10b981;
   --accent-hover: #059669;
   --accent-soft: rgba(16, 185, 129, 0.12);
+  --accent-foreground: #09090b;
+  --accent-border: rgba(16, 185, 129, 0.25);
+  --focus-ring: rgba(16, 185, 129, 0.35);
+  --success: #34d399;
   --warning: #f59e0b;
   --warning-soft: rgba(245, 158, 11, 0.12);
+  --warning-text: #fbbf24;
+  --warning-border: rgba(245, 158, 11, 0.25);
   --danger: #f43f5e;
   --danger-soft: rgba(244, 63, 94, 0.12);
+  --danger-text: #fb7185;
+  --danger-border: rgba(244, 63, 94, 0.25);
+  --disabled-surface: rgba(39, 39, 42, 0.5);
+  --disabled-text: #71717a;
+  --overlay: rgba(0, 0, 0, 0.72);
+  --shadow: rgba(0, 0, 0, 0.35);
+  --modal-shadow: rgba(0, 0, 0, 0.6);
+  --scrollbar: #3f3f46;
+  --scrollbar-hover: #52525b;
   --radius-card: 12px;
   --radius-control: 8px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --background: #fafafa;
+    --surface: rgba(255, 255, 255, 0.78);
+    --surface-strong: #ffffff;
+    --surface-muted: #f4f4f5;
+    --border: #e4e4e7;
+    --border-strong: #a1a1aa;
+    --text: #18181b;
+    --muted: #71717a;
+    --field-label: #3f3f46;
+    --heading: #27272a;
+    --accent: #059669;
+    --accent-hover: #047857;
+    --accent-soft: rgba(5, 150, 105, 0.12);
+    --accent-foreground: #ffffff;
+    --accent-border: rgba(5, 150, 105, 0.25);
+    --focus-ring: rgba(5, 150, 105, 0.35);
+    --success: #047857;
+    --warning: #b45309;
+    --warning-soft: rgba(180, 83, 9, 0.12);
+    --warning-text: #b45309;
+    --warning-border: rgba(180, 83, 9, 0.25);
+    --danger: #be123c;
+    --danger-soft: rgba(190, 18, 60, 0.12);
+    --danger-text: #be123c;
+    --danger-border: rgba(190, 18, 60, 0.25);
+    --disabled-surface: rgba(228, 228, 231, 0.7);
+    --disabled-text: #a1a1aa;
+    --overlay: rgba(24, 24, 27, 0.45);
+    --shadow: rgba(24, 24, 27, 0.12);
+    --modal-shadow: rgba(24, 24, 27, 0.22);
+    --scrollbar: #a1a1aa;
+    --scrollbar-hover: #71717a;
+  }
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Custom dark scrollbar */
+/* System-theme scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -33,11 +90,11 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--scrollbar);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--scrollbar-hover);
 }
 
 body {
@@ -82,7 +139,7 @@ button {
   height: 36px;
   border-radius: var(--radius-control);
   background: var(--accent);
-  color: #09090b;
+  color: var(--accent-foreground);
   font-weight: 800;
 }
 
@@ -136,14 +193,14 @@ h3 {
 }
 
 .nav-item:hover {
-  background: rgba(39, 39, 42, 0.6);
+  background: var(--surface-muted);
   color: var(--text);
 }
 
 .nav-item.active {
-  border-color: #3f3f46;
-  background: #27272a;
-  color: #ffffff;
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 .nav-label {
@@ -175,7 +232,7 @@ h3 {
 }
 
 .status-dot.normal {
-  background: #10b981;
+  background: var(--accent);
 }
 
 .status-dot.setup {
@@ -205,7 +262,7 @@ h3 {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  background: #18181b;
+  background: var(--surface-strong);
   color: var(--muted);
   font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
   text-overflow: ellipsis;
@@ -216,7 +273,7 @@ h3 {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 30px var(--shadow);
 }
 
 .state-card {
@@ -324,12 +381,12 @@ h3 {
   padding: 5px 10px;
   border-radius: 9999px;
   background: var(--accent-soft);
-  color: #34d399;
+  color: var(--success);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  border: 1px solid var(--accent-border);
 }
 
 .muted-copy {
@@ -361,7 +418,7 @@ h3 {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  background: #18181b;
+  background: var(--surface-strong);
   font: 13px ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
@@ -373,12 +430,12 @@ h3 {
   padding: 5px 10px;
   border-radius: 9999px;
   background: var(--warning-soft);
-  color: #fbbf24;
+  color: var(--warning-text);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  border: 1px solid var(--warning-border);
 }
 
 .editor-form {
@@ -389,7 +446,7 @@ h3 {
 }
 
 .field-label {
-  color: #d4d4d8;
+  color: var(--field-label);
   font-size: 13px;
   font-weight: 600;
 }
@@ -422,7 +479,7 @@ h3 {
 .map-editor > select:focus,
 .repair-card select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .editor-form > textarea {
@@ -440,13 +497,13 @@ h3 {
 
 .editor-form > textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 .editor-form select option,
 .uploader-form select option,
 .map-editor select option,
 .repair-card select option {
-  background: #18181b;
+  background: var(--surface-strong);
   color: var(--text);
   font-size: 14px;
   padding: 6px 10px;
@@ -488,7 +545,7 @@ h3 {
 .primary-action {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #09090b;
+  color: var(--accent-foreground);
 }
 
 .primary-action:hover:not(:disabled) {
@@ -498,20 +555,20 @@ h3 {
 
 .secondary-action {
   border: 1px solid var(--border);
-  background: #18181b;
+  background: var(--surface-strong);
   color: var(--text);
 }
 
 .secondary-action:hover:not(:disabled) {
-  background: #27272a;
-  border-color: #3f3f46;
+  background: var(--surface-muted);
+  border-color: var(--border-strong);
 }
 
 .primary-action:disabled, .secondary-action:disabled {
   cursor: not-allowed;
-  background: rgba(39, 39, 42, 0.5);
-  border-color: rgba(39, 39, 42, 0.5);
-  color: #71717a;
+  background: var(--disabled-surface);
+  border-color: var(--disabled-surface);
+  color: var(--disabled-text);
 }
 
 .inline-error, .inline-success {
@@ -523,14 +580,14 @@ h3 {
 
 .inline-error {
   background: var(--danger-soft);
-  color: #fb7185;
-  border: 1px solid rgba(244, 63, 94, 0.25);
+  color: var(--danger-text);
+  border: 1px solid var(--danger-border);
 }
 
 .inline-success {
   background: var(--accent-soft);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: var(--success);
+  border: 1px solid var(--accent-border);
 }
 
 .modal-backdrop {
@@ -539,7 +596,7 @@ h3 {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--overlay);
   backdrop-filter: blur(4px);
 }
 
@@ -548,8 +605,8 @@ h3 {
   padding: 28px;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  background: #18181b;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  background: var(--surface-strong);
+  box-shadow: 0 24px 70px var(--modal-shadow);
 }
 
 .confirm-dialog p:not(.eyebrow) {
@@ -588,14 +645,14 @@ h3 {
 }
 
 .definition-button:hover {
-  background: rgba(39, 39, 42, 0.6);
+  background: var(--surface-muted);
   color: var(--text);
 }
 
 .definition-button.active {
-  border-color: #3f3f46;
-  background: #27272a;
-  color: #ffffff;
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 .definition-button small {
@@ -625,7 +682,7 @@ h3 {
 .uploader-form > textarea:focus,
 .map-editor > textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .map-editor {
@@ -646,7 +703,7 @@ h3 {
 .map-heading h4, .map-editor h4 {
   margin: 0;
   font-size: 13px;
-  color: #e4e4e7;
+  color: var(--heading);
 }
 
 .map-row {
@@ -670,7 +727,7 @@ h3 {
 
 .map-row input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .icon-action {
@@ -678,7 +735,7 @@ h3 {
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  background: #18181b;
+  background: var(--surface-strong);
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
@@ -687,8 +744,8 @@ h3 {
 
 .icon-action:hover {
   color: var(--text);
-  background: #27272a;
-  border-color: #3f3f46;
+  background: var(--surface-muted);
+  border-color: var(--border-strong);
 }
 
 @media (max-width: 980px) {
@@ -727,5 +784,62 @@ h3 {
 
 .repair-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.manual-upload-drop {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+
+.manual-upload-drop strong {
+  color: var(--text);
+}
+
+.manual-upload-drop span,
+.manual-upload-result span,
+.manual-upload-result a {
+  overflow-wrap: anywhere;
+}
+
+.manual-upload-drop.file-drop-target-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.manual-upload-drop .secondary-action {
+  justify-self: start;
+}
+
+.manual-upload-result {
+  display: grid;
+  gap: 6px;
+}
+
+.manual-upload-result a {
+  color: inherit;
+}
+
+.manual-upload-status {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.manual-upload-status strong {
+  color: var(--success);
+}
+
+.manual-upload-status .secondary-action {
+  justify-self: start;
 }

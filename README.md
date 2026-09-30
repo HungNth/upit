@@ -1,6 +1,6 @@
 # Upit
 
-Upit is a headless-first, cross-platform file uploader. It streams one file to a configurable HTTP endpoint, prints the resulting URL, and exits—no daemon, tray process, GUI, or resident worker.
+Upit is a headless-first, cross-platform file uploader. `upit` streams one file to a configurable HTTP endpoint, prints the resulting URL, and exits. The separately launched `upit-desktop` adds local Configuration Set management and Manual Upload without changing the CLI runtime model.
 
 ## Features
 
@@ -10,36 +10,61 @@ Upit is a headless-first, cross-platform file uploader. It streams one file to a
 - JSONPath, response-header, regex, and raw-body Response Extractors
 - Optional URL shortening via named, configurable Shorteners
 - Non-interactive Configuration Management commands for reading, validating, and changing Global Configuration
+- Separate Upit Desktop with Setup, Repair, and structured Global Configuration, Uploader, and Shortener editing
+- Manual Upload for exactly one regular file from a native picker or drag-and-drop, with per-upload Uploader, Shortener, clipboard, and timeout choices
+- Manual Upload progress, cancellation, explicit Retry, Final URL copying, and nonfatal Shortener or clipboard warnings
 - Hand-written Draft 2020-12 schemas for the three Configuration Set documents
-- Plain URL or machine-readable JSON output
+- Plain URL or machine-readable JSON CLI output
 - Context cancellation and optional whole-invocation upload timeout
 - Optional, nonfatal clipboard copying
-- Windows, macOS, and headless Linux support
+- Windows, macOS, and headless Linux CLI support
 
 > [!NOTE]
-> v0.4 remains CLI-only and headless-first. It adds non-interactive Configuration Management and published schemas without adding a GUI, daemon, resident worker, or new upload protocol.
+> Upit Desktop pins Wails `v3.0.0-beta.26`, a pre-release dependency. It is a separate executable: `upit` never starts Wails, a WebView, a GUI, tray process, or resident worker.
 
 ## Requirements
 
 - Go 1.25 or newer to build from source
+- Node.js and npm for `upit-desktop` frontend builds
+- `wails3` `v3.0.0-beta.26` only when regenerating desktop bindings after exported Go interface changes
+- Desktop runtime:
+    - Windows: WebView2
+    - macOS: system WebKit
+    - Linux: GTK4 and WebKitGTK 6.0
 - Clipboard command only when clipboard copying is enabled:
     - macOS: `pbcopy`
     - Windows: `clip`
     - Linux: `wl-copy`, `xclip`, or `xsel`
 
-The upload path itself has no desktop or clipboard dependency.
+The CLI upload path itself has no desktop or clipboard dependency.
 
 ## Build
 
-```bash
-go build -o bin/upit ./cmd/upit
-```
-
-Show CLI help:
+Build the CLI:
 
 ```bash
+make build
 ./bin/upit --help
 ```
+
+Build Upit Desktop from the repository root:
+
+```bash
+# First clone, or after package-lock.json changes.
+make setup-desktop
+
+# Type-checks/bundles the frontend, then embeds it in the native executable.
+make build-desktop
+./bin/upit-desktop
+```
+
+`make build-desktop` assumes `node_modules` already exists; run `make setup-desktop` if frontend dependencies are missing. Run `make generate-desktop-bindings` only after changing an exported desktop Go method or model.
+
+## Upit Desktop
+
+Upit Desktop is one single-instance window that follows the operating system light/dark preference. It uses the same fixed `~/.config/upit/` Configuration Set and Wails-free application rules as the CLI. Manual Upload accepts one regular file, supports a native picker or drag-and-drop, blocks start while Configuration Set edits are dirty, reloads configuration before execution, and retains selected inputs for explicit Retry after failure or cancellation.
+
+v0.5 provides native runnable artifacts only. Installers, signing, notarization, auto-update, package-manager manifests, File Explorer/Finder integration, launchers, shell integration, upload history, queues, batch uploads, automatic retry, and background workers remain out of scope.
 
 ## Configuration
 
@@ -316,4 +341,4 @@ go test ./...
 go vet ./...
 ```
 
-Architecture, domain language, and accepted decisions are documented under `docs/`, `CONTEXT.md`, and `.scratch/upit-v0.1/` through `.scratch/upit-v0.4/`.
+Architecture, domain language, accepted decisions, and roadmap specifications are documented under `docs/`, `CONTEXT.md`, and `.scratch/upit-v0.1/` through `.scratch/upit-v0.7/`.

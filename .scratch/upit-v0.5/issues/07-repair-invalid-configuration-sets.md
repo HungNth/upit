@@ -21,5 +21,5 @@
 - [x] Successful repair uses the safe canonical publication path and returns to normal structured editing only when the complete Configuration Set is valid.
 - [x] Tests prove Repair never silently resets, truncates, writes draft sidecars, logs credentials, or enables an upload from invalid configuration.
 
-**Verification note:** Startup tests now cover partial/missing, malformed line/column, unsupported-version, Unix permission, cross-document, stale, publication/reclassification, and CLI upload refusal cases. UI lock/unlock session relock and native Repair interaction are still not directly automated; Ticket 07 remains partial.
+**Verification note:** Startup tests cover partial/missing, malformed line/column, unsupported-version, Unix permission, cross-document, stale, publication/reclassification, and CLI upload refusal cases. The frontend now clears unlocked raw state after successful repair, repair-kind changes, and unmount; failed unlock stays locked and displays its diagnostic. Native Repair interaction remains unverified because WebView controls are unavailable to automation on this host.
 

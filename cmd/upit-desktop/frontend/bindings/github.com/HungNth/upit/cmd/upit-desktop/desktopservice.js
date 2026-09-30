@@ -11,10 +11,32 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as app$0 from "../../internal/app/models.js";
 
 /**
+ * @returns {$CancellablePromise<boolean>}
+ */
+export function CancelManualUpload() {
+    return $Call.ByID(1931477316);
+}
+
+/**
+ * @returns {$CancellablePromise<app$0.ManualUploadSelection>}
+ */
+export function ChooseManualUploadFile() {
+    return $Call.ByID(3613828877);
+}
+
+/**
  * @returns {$CancellablePromise<void>}
  */
 export function ConfirmClose() {
     return $Call.ByID(1472773685);
+}
+
+/**
+ * @param {string} finalURL
+ * @returns {$CancellablePromise<void>}
+ */
+export function CopyManualUploadFinalURL(finalURL) {
+    return $Call.ByID(148873622, finalURL);
 }
 
 /**
@@ -74,6 +96,14 @@ export function LoadUploaderEditor(name) {
 }
 
 /**
+ * @param {string} filePath
+ * @returns {$CancellablePromise<app$0.ManualUploadSelection>}
+ */
+export function PrepareManualUploadFile(filePath) {
+    return $Call.ByID(1453319313, filePath);
+}
+
+/**
  * @param {app$0.ShortenerRenameDraft} draft
  * @returns {$CancellablePromise<app$0.ShortenerEditorState>}
  */
@@ -87,6 +117,13 @@ export function RenameShortener(draft) {
  */
 export function RenameUploader(draft) {
     return $Call.ByID(134924561, draft);
+}
+
+/**
+ * @returns {$CancellablePromise<void>}
+ */
+export function RetryClose() {
+    return $Call.ByID(1646005143);
 }
 
 /**
@@ -127,6 +164,14 @@ export function SaveUploaderEditor(draft) {
  */
 export function SetGlobalConfigurationDirty(dirty) {
     return $Call.ByID(2317002498, dirty);
+}
+
+/**
+ * @param {app$0.ManualUploadOptions} options
+ * @returns {$CancellablePromise<app$0.ManualUploadResult>}
+ */
+export function StartManualUpload(options) {
+    return $Call.ByID(1557518424, options);
 }
 
 /**

@@ -22,6 +22,26 @@ import * as $models from "./models.js";
  */
 
 /**
+ * ManualUploadFailure is a redacted failure suitable for desktop presentation.
+ * @typedef {$models.ManualUploadFailure} ManualUploadFailure
+ */
+
+/**
+ * ManualUploadOptions contains the one-invocation choices available in Manual Upload.
+ * @typedef {$models.ManualUploadOptions} ManualUploadOptions
+ */
+
+/**
+ * ManualUploadResult is the terminal result of one Manual Upload.
+ * @typedef {$models.ManualUploadResult} ManualUploadResult
+ */
+
+/**
+ * ManualUploadSelection describes one regular file available for Manual Upload.
+ * @typedef {$models.ManualUploadSelection} ManualUploadSelection
+ */
+
+/**
  * @typedef {$models.RepairDocumentDraft} RepairDocumentDraft
  */
 

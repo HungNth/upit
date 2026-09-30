@@ -36,6 +36,10 @@ type Service struct {
 }
 
 func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, error) {
+	return s.upload(ctx, options, nil)
+}
+
+func (s Service) upload(ctx context.Context, options UploadOptions, progress ManualUploadProgressFunc) (Outcome, error) {
 	homeDir := s.HomeDir
 	if homeDir == nil {
 		homeDir = os.UserHomeDir
@@ -84,12 +88,16 @@ func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, er
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	result, err := uploadFile(ctx, &client, options.FilePath, selected)
+	result, err := uploadFile(ctx, &client, options.FilePath, selected, func(processed, total int64) {
+		emitManualUploadProgress(progress, ManualUploadProgress{Phase: "uploading", Processed: processed, Total: total})
+	})
 	if err != nil {
 		return Outcome{}, err
 	}
+	emitManualUploadProgress(progress, ManualUploadProgress{Phase: "response"})
 	warnings := []string(nil)
 	if selectedShortener != nil {
+		emitManualUploadProgress(progress, ManualUploadProgress{Phase: "shortening"})
 		finalURL, shortenErr := shortenURL(ctx, &client, result.OriginalURL, *selectedShortener)
 		if shortenErr != nil {
 			if errors.Is(shortenErr, context.Canceled) && errors.Is(ctx.Err(), context.Canceled) {
@@ -112,6 +120,7 @@ func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, er
 	if !copyResult {
 		return outcome, nil
 	}
+	emitManualUploadProgress(progress, ManualUploadProgress{Phase: "clipboard"})
 	copier := s.Clipboard
 	if copier == nil {
 		copier = SystemClipboard{}
@@ -120,4 +129,10 @@ func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, er
 		outcome.Warnings = append(outcome.Warnings, fmt.Sprintf("copy to clipboard: %v", err))
 	}
 	return outcome, nil
+}
+
+func emitManualUploadProgress(progress ManualUploadProgressFunc, update ManualUploadProgress) {
+	if progress != nil {
+		progress(update)
+	}
 }

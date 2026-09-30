@@ -12,12 +12,16 @@
 
 **Demo path:** Select one temporary file, upload it through a local endpoint with default settings, override Uploader/Shortener/clipboard/timeout for another upload, Copy the Final URL, force a structured endpoint failure, and use explicit Retry after correcting the cause.
 
-- [ ] Manual Upload accepts one selected regular file from the native picker or exactly one dropped file; directories, non-regular paths, and any multi-file drop are rejected with an inline explanation and no endpoint request.
-- [ ] The view preselects Global Configuration defaults and permits per-upload Uploader, Shortener, no-shorten, clipboard, no-clipboard, and optional whole-operation timeout overrides with existing CLI meanings.
-- [ ] Upload cannot begin during Setup, Repair, dirty Configuration Set edits, or an existing active upload.
-- [ ] Before start, the application rechecks freshness, reloads, and strictly validates the on-disk Configuration Set; the operation then uses an immutable configuration snapshot.
-- [ ] Manual Upload reuses every existing Uploader Request Body Mode, Response Extractor, Shortener fallback, clipboard-warning, timeout, cancellation, and redaction contract rather than creating a desktop protocol.
-- [ ] Success prominently presents Final URL, shows Original URL only when different, preserves warning order, and provides a Copy action for Final URL.
-- [ ] Failure presents sanitized stage, message, and HTTP status when available while preserving the selected input and overrides.
-- [ ] Retry is explicit, performs a fresh configuration preflight, and causes exactly one new attempt; no automatic retry, queue, history, auto-open, or batch behavior is added.
+- [x] Manual Upload accepts one selected regular file from the native picker or exactly one dropped file; directories, non-regular paths, and any multi-file drop are rejected with an inline explanation and no endpoint request.
+- [x] The view preselects Global Configuration defaults and permits per-upload Uploader, Shortener, no-shorten, clipboard, no-clipboard, and optional whole-operation timeout overrides with existing CLI meanings.
+- [x] Upload cannot begin during Setup, Repair, dirty Configuration Set edits, or an existing active upload.
+- [x] Before start, the application rechecks freshness, reloads, and strictly validates the on-disk Configuration Set; the operation then uses an immutable configuration snapshot.
+- [x] Manual Upload reuses every existing Uploader Request Body Mode, Response Extractor, Shortener fallback, clipboard-warning, timeout, cancellation, and redaction contract rather than creating a desktop protocol.
+- [x] Success prominently presents Final URL, shows Original URL only when different, preserves warning order, and provides a Copy action for Final URL.
+- [x] Failure presents sanitized stage, message, and HTTP status when available while preserving the selected input and overrides.
+- [x] Retry is explicit, performs a fresh configuration preflight, and causes exactly one new attempt; no automatic retry, queue, history, auto-open, or batch behavior is added.
 - [ ] Local-server end-to-end tests and a desktop smoke prove one successful upload, one Shortener fallback, one clipboard warning, one structured failure, and one explicit retry.
+
+## Comments
+
+- The Wails-free Manual Upload test covers default/override selection, Shortener processing, clipboard behavior, invalid timeout, and local-path redaction. Native picker/drop interaction remains part of the cross-platform release smoke in ticket 10.

@@ -51,6 +51,44 @@ export const DesktopStartupMode = {
  */
 
 /**
+ * ManualUploadFailure is a redacted failure suitable for desktop presentation.
+ * @typedef {Object} ManualUploadFailure
+ * @property {string} stage
+ * @property {string} message
+ * @property {number} [statusCode]
+ * @property {boolean} canceled
+ */
+
+/**
+ * ManualUploadOptions contains the one-invocation choices available in Manual Upload.
+ * @typedef {Object} ManualUploadOptions
+ * @property {string} filePath
+ * @property {string} uploader
+ * @property {string} shortener
+ * @property {boolean} disableShortening
+ * @property {string} clipboard
+ * @property {string} timeout
+ */
+
+/**
+ * ManualUploadResult is the terminal result of one Manual Upload.
+ * @typedef {Object} ManualUploadResult
+ * @property {boolean} success
+ * @property {string} originalURL
+ * @property {string} finalURL
+ * @property {string[] | null} warnings
+ * @property {ManualUploadFailure | null} failure
+ */
+
+/**
+ * ManualUploadSelection describes one regular file available for Manual Upload.
+ * @typedef {Object} ManualUploadSelection
+ * @property {string} path
+ * @property {string} name
+ * @property {number} size
+ */
+
+/**
  * @typedef {Object} RepairDocumentDraft
  * @property {RepairDocumentKind} kind
  * @property {string} revision

@@ -1,0 +1,3 @@
+# Sequence desktop and File Manager Upload releases
+
+Upit delivers v0.5 as a stable desktop release only after its existing Desktop Configuration and Manual Upload contract, including system light/dark behavior, is proven on Windows, macOS, and modern GTK4/WebKitGTK Linux; the unchanged headless CLI is proven as a regression gate rather than expanded. Windows File Manager Upload follows as v0.6 and macOS File Manager Upload as v0.7, instead of holding both for a v1.0 umbrella, because each is an independently installable native integration with distinct signing and smoke requirements. Here, stable describes a proven Upit contract, not a claim that pinned Wails `v3.0.0-beta.26` is stable.

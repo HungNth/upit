@@ -1501,29 +1501,31 @@ https://files.example.com/file.zip
 - Draft 2020-12 schemas for Global Configuration, Uploader, and Shortener documents
 - Uploader and Shortener documents remain manually managed; no migration, editor, or provider adapter was added
 
-### v0.5 — Wails 3 Desktop (planned)
+### v0.5 — Desktop Configuration and Manual Upload (in progress)
 
 - Keep the headless `upit` CLI and add a separate `upit-desktop` executable built with pinned Wails 3, Vue, TypeScript, Vite, and shadcn-vue.
 - Provide Manual Upload for exactly one file selected by picker or drag-and-drop, with CLI-parity overrides, progress, cancellation, structured failures, manual retry, and Final URL results.
 - Manage the three existing Global Configuration fields and the complete lifecycle of Uploaders and Shorteners through structured editors, strict validation, explicit valid-only saves, first-run setup, and raw repair for invalid documents.
 - Reject stale saves and block rename or deletion of referenced definitions instead of adding lock files, automatic merge, or cross-document transaction journals.
 - Run one desktop instance, never use a system tray or resident worker, and exit completely after resolving active uploads and unsaved edits when the window closes.
-- Build native runnable desktop artifacts for Windows, macOS, and modern GTK4/WebKitGTK 6.0 Linux; defer installers, signing, auto-update, and operating-system integration to v1.0.
+- Prove the desktop contract, including its system light/dark behavior, on Windows, macOS, and modern GTK4/WebKitGTK Linux. v0.5 includes no installer, signing, notarization, or File Manager Upload.
 
-### v1.0 — Distribution and OS Integration
+### v0.6 — Windows File Manager Upload (planned)
 
-- Stable headless CLI
-- Stable desktop frontend
-- Windows Explorer integration
-- macOS Finder integration
-- Flow Launcher integration
-- Wox integration
-- Raycast integration
-- Shell integration
-- Linux server release artifacts
-- Container-friendly CLI distribution
+- Deliver a signed Windows 11 x64 desktop package with `Upload with Upit` in the primary File Explorer context menu through `IExplorerCommand` and package identity.
+- File Manager Upload accepts exactly one regular file, applies Global Configuration defaults without opening Upit Desktop, reports privacy-minimized native progress and outcomes, and exits after use.
 
-All integrations should invoke Upit on demand.
+### v0.7 — macOS File Manager Upload (planned)
+
+- Deliver a Developer ID-signed and notarized macOS 14+ Apple Silicon desktop package with an `Upload with Upit` NSServices background helper surfaced via Finder Services and Quick Actions.
+- The background-only Service accepts exactly one regular file, applies Global Configuration defaults without opening Upit Desktop, reports privacy-minimized native progress and outcomes, and exits after use.
+
+### v1.0 — Remaining Distribution and OS Integration
+
+- Flow Launcher, Wox, Raycast, and other launcher or shell integrations.
+- Linux server release artifacts and container-friendly CLI distribution.
+
+All integrations invoke Upit on demand.
 
 ---
 

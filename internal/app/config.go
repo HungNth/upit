@@ -116,7 +116,7 @@ func validateCredentialFilePermissions(path string) error {
 		return nil
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		return failuref("validation", nil, "%s contains credentials and must have mode 0600; run: chmod 600 %s", path, path)
+		return failuref("validation", nil, "%s contains credentials and has insecure permissions; mode 0600 is required; run: chmod 600 %s", path, path)
 	}
 	return nil
 }

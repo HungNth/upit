@@ -1,0 +1,3 @@
+# Run File Manager Upload through a one-shot helper
+
+File Manager Upload adapters pass exactly one selected path to a Wails-free one-shot helper, which validates the regular file and current Configuration Set, applies Global Configuration defaults, and invokes the existing application upload behavior directly. The helper owns single-flight exclusion, privacy-minimized native feedback, cancellation, and short-lived private action state; it exits after the operation or action window rather than opening `upit-desktop`, parsing CLI output, running network work inside Explorer or Finder, or becoming a daemon.

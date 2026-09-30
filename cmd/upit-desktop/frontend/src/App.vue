@@ -2,7 +2,10 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Events } from '@wailsio/runtime'
 import {
+  CancelManualUpload,
+  ChooseManualUploadFile,
   ConfirmClose,
+  CopyManualUploadFinalURL,
   CreateInitialConfigurationSet,
   DeleteShortener,
   DeleteUploader,
@@ -10,6 +13,8 @@ import {
   LoadRepairDocument,
   LoadShortenerEditor,
   LoadUploaderEditor,
+  PrepareManualUploadFile,
+  RetryClose,
   RenameShortener,
   RenameUploader,
   SaveGlobalConfiguration,
@@ -17,12 +22,16 @@ import {
   SaveShortenerEditor,
   SaveUploaderEditor,
   SetGlobalConfigurationDirty,
+  StartManualUpload,
   StartupState,
 } from '../bindings/github.com/HungNth/upit/cmd/upit-desktop/desktopservice.js'
 import type {
   DesktopStartupState,
   GlobalConfigurationDraft,
   GlobalConfigurationEditorState,
+  ManualUploadOptions,
+  ManualUploadResult,
+  ManualUploadSelection,
   RepairDocumentDraft,
   RepairDocumentKind,
   RepairDocumentState,
@@ -33,6 +42,12 @@ import type {
 } from '../bindings/github.com/HungNth/upit/internal/app/models.js'
 type Area = 'manual-upload' | 'global-configuration' | 'uploaders' | 'shorteners'
 type DirtyAction = 'navigate' | 'refresh'
+type ManualUploadProgress = {
+  phase: string
+  processed: number
+  total: number
+}
+
 
 const areas: Array<{ id: Area; label: string; description: string }> = [
   { id: 'manual-upload', label: 'Manual Upload', description: 'Upload one file interactively.' },
@@ -63,6 +78,16 @@ const repairState = ref<RepairDocumentState | null>(null)
 const repairLocked = ref(true)
 const repairLoading = ref(false)
 const repairError = ref('')
+function lockRepair() {
+	repairLocked.value = true
+	repairState.value = null
+}
+function changeRepairKind() {
+	repairError.value = ''
+	lockRepair()
+}
+
+
 function countSetupInputs(value: unknown): number {
 	if (value === '{input}') return 1
 	if (Array.isArray(value)) return value.reduce((count, item) => count + countSetupInputs(item), 0)
@@ -114,6 +139,9 @@ const dirtyAction = ref<DirtyAction | null>(null)
 const pendingArea = ref<Area | null>(null)
 const closeRequested = ref(false)
 let stopCloseRequested: (() => void) | undefined
+let stopManualFilesDropped: (() => void) | undefined
+let stopManualUploadProgress: (() => void) | undefined
+let stopManualUploadCloseRequested: (() => void) | undefined
 const globalDraft = computed<GlobalConfigurationDraft>(() => ({
   revision: globalEditor.revision,
   defaultUploader: globalEditor.defaultUploader,
@@ -134,13 +162,157 @@ const shortenerLoading = ref(false)
 const shortenerError = ref('')
 const pendingShortener = ref<string | null>(null)
 const shortenerDirty = computed(() => Boolean(shortenerState.value) && shortenerSaved.value !== JSON.stringify(shortenerState.value?.draft))
+const manualFile = ref<ManualUploadSelection | null>(null)
+const manualUploaderChoice = ref('default')
+const manualShortenerChoice = ref('default')
+const manualClipboard = ref('default')
+const manualTimeout = ref('')
+const manualLoading = ref(false)
+const manualError = ref('')
+const manualNotice = ref('')
+const manualResult = ref<ManualUploadResult | null>(null)
+const manualProgress = ref<ManualUploadProgress | null>(null)
+const manualCloseRequested = ref(false)
 const anyDirty = computed(() => globalDirty.value || uploaderDirty.value || shortenerDirty.value)
+const manualReady = computed(() => Boolean(
+  state.value?.mode === 'normal'
+  && manualFile.value
+  && !anyDirty.value
+  && !manualLoading.value,
+))
 watch(anyDirty, (dirty) => {
  	void SetGlobalConfigurationDirty(dirty)
 
 })
 function errorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+function manualPhaseLabel(phase: string) {
+  return ({
+    preparing: 'Preparing',
+    uploading: 'Uploading',
+    response: 'Processing response',
+    shortening: 'Shortening URL',
+    clipboard: 'Copying to clipboard',
+  } as Record<string, string>)[phase] ?? 'Working'
+}
+
+function formatManualBytes(value: number) {
+  if (value < 1024) return `${value} bytes`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MiB`
+}
+
+function applyManualUploadFile(selection: ManualUploadSelection) {
+  if (!selection.path) {
+    return
+  }
+  manualFile.value = selection
+  manualError.value = ''
+  manualNotice.value = ''
+  manualResult.value = null
+}
+
+function manualUploader(): string {
+  return manualUploaderChoice.value.startsWith('named:') ? manualUploaderChoice.value.slice('named:'.length) : ''
+}
+
+function manualShortener(): { name: string; disabled: boolean } {
+  if (manualShortenerChoice.value === 'none') {
+    return { name: '', disabled: true }
+  }
+  return {
+    name: manualShortenerChoice.value.startsWith('named:') ? manualShortenerChoice.value.slice('named:'.length) : '',
+    disabled: false,
+  }
+}
+
+function manualUploadOptions(): ManualUploadOptions | null {
+  if (!manualFile.value) {
+    return null
+  }
+  const shortener = manualShortener()
+  return {
+    filePath: manualFile.value.path,
+    uploader: manualUploader(),
+    shortener: shortener.name,
+    disableShortening: shortener.disabled,
+    clipboard: manualClipboard.value,
+    timeout: manualTimeout.value,
+  }
+}
+
+async function prepareManualUploadFile(filePath: string) {
+  if (manualLoading.value) {
+    return
+  }
+  try {
+    applyManualUploadFile(await PrepareManualUploadFile(filePath))
+  } catch (cause) {
+    manualError.value = errorMessage(cause)
+  }
+}
+
+async function chooseManualUploadFile() {
+  if (manualLoading.value) {
+    return
+  }
+  try {
+    applyManualUploadFile(await ChooseManualUploadFile())
+  } catch (cause) {
+    manualError.value = errorMessage(cause)
+  }
+}
+
+async function startManualUpload() {
+  const options = manualUploadOptions()
+  if (!options || !manualReady.value) {
+    return
+  }
+  manualLoading.value = true
+  manualError.value = ''
+  manualNotice.value = ''
+  manualResult.value = null
+  manualProgress.value = { phase: 'preparing', processed: 0, total: 0 }
+  try {
+    manualResult.value = await StartManualUpload(options)
+  } catch (cause) {
+    manualError.value = errorMessage(cause)
+  } finally {
+    manualLoading.value = false
+  }
+}
+
+async function copyManualUploadFinalURL() {
+  if (!manualResult.value?.success) {
+    return
+  }
+  manualNotice.value = ''
+  try {
+    await CopyManualUploadFinalURL(manualResult.value.finalURL)
+    manualNotice.value = 'Final URL copied to the clipboard.'
+  } catch (cause) {
+    manualError.value = errorMessage(cause)
+  }
+}
+
+async function cancelManualUpload() {
+  if (!manualLoading.value) {
+    return
+  }
+  if (!await CancelManualUpload()) {
+    manualError.value = 'Manual Upload could not be canceled.'
+  }
+}
+
+async function resolveManualUploadClose(action: 'cancel' | 'confirm') {
+  manualCloseRequested.value = false
+  if (action === 'cancel') {
+    return
+  }
+  await cancelManualUpload()
+  await RetryClose()
 }
 
 function applyGlobalEditor(loaded: GlobalConfigurationEditorState) {
@@ -521,8 +693,11 @@ async function loadRepairDocument() {
 }
 
 async function unlockRepair() {
-	repairLocked.value = false
+	lockRepair()
 	await loadRepairDocument()
+	if (repairState.value) {
+		repairLocked.value = false
+	}
 }
 
 async function saveRepairDocument() {
@@ -532,8 +707,7 @@ async function saveRepairDocument() {
 	try {
 		const startup = await SaveRepairDocument({ kind: repairKind.value, revision: repairState.value.revision, content: repairState.value.content })
 		state.value = startup
-		repairLocked.value = true
-		repairState.value = null
+		lockRepair()
 	} catch (cause) {
 		repairError.value = errorMessage(cause)
 	} finally {
@@ -672,12 +846,31 @@ onMounted(async () => {
 	}
 	window.addEventListener('focus', handleFocus)
 	stopCloseRequested = Events.On('desktop:close-requested', () => { closeRequested.value = true })
+	stopManualFilesDropped = Events.On('desktop:manual-upload-files-dropped', (event) => {
+		const files = event.data
+		if (!Array.isArray(files) || files.length !== 1 || typeof files[0] !== 'string') {
+			manualError.value = 'Drop exactly one file.'
+			return
+		}
+		void prepareManualUploadFile(files[0])
+	})
+	stopManualUploadProgress = Events.On('desktop:manual-upload-progress', (event) => {
+		const update = event.data as Partial<ManualUploadProgress>
+		if (typeof update?.phase === 'string' && typeof update.processed === 'number' && typeof update.total === 'number') {
+			manualProgress.value = { phase: update.phase, processed: update.processed, total: update.total }
+		}
+	})
+	stopManualUploadCloseRequested = Events.On('desktop:manual-upload-close-requested', () => { manualCloseRequested.value = true })
 	void SetGlobalConfigurationDirty(false)
 })
 
 onUnmounted(() => {
+	lockRepair()
 	window.removeEventListener('focus', handleFocus)
 	stopCloseRequested?.()
+	stopManualFilesDropped?.()
+	stopManualUploadProgress?.()
+	stopManualUploadCloseRequested?.()
 })
 </script>
 
@@ -706,6 +899,12 @@ onUnmounted(() => {
           <span class="nav-description">{{ area.description }}</span>
         </button>
       </nav>
+
+      <section v-if="manualLoading" class="manual-upload-status" role="status" aria-live="polite">
+        <strong>Manual Upload: {{ manualPhaseLabel(manualProgress?.phase ?? 'preparing') }}</strong>
+        <span v-if="manualProgress?.total">{{ formatManualBytes(manualProgress.processed) }} of {{ formatManualBytes(manualProgress.total) }}</span>
+        <button class="secondary-action" type="button" @click="cancelManualUpload">Cancel</button>
+      </section>
 
       <div class="sidebar-footer">
         <span class="status-dot" :class="state?.mode ?? 'loading'" aria-hidden="true"></span>
@@ -800,16 +999,16 @@ onUnmounted(() => {
         <h3>Your Configuration Set needs attention</h3>
         <p>{{ state.diagnostic }}</p>
         <label class="field-label" for="repair-kind">Document to repair</label>
-        <select id="repair-kind" v-model="repairKind" :disabled="repairLoading" @change="repairLocked = true; repairState = null">
+        <select id="repair-kind" v-model="repairKind" :disabled="repairLoading" @change="changeRepairKind">
           <option value="config">Global Configuration</option>
           <option value="uploaders">Uploaders</option>
           <option value="shorteners">Shorteners</option>
         </select>
         <p v-if="repairLocked" class="muted-copy">The raw document is locked until you explicitly unlock it. It may contain credentials.</p>
         <button v-if="repairLocked" class="primary-action" type="button" :disabled="repairLoading" @click="unlockRepair">Unlock repair document</button>
-        <template v-else>
+        <p v-if="repairError" class="inline-error" role="alert">{{ repairError }}</p>
+        <template v-if="!repairLocked">
           <textarea v-if="repairState" v-model="repairState.content" class="repair-textarea" rows="14" spellcheck="false" :disabled="repairLoading"></textarea>
-          <p v-if="repairError" class="inline-error" role="alert">{{ repairError }}</p>
           <div class="editor-actions">
             <button class="primary-action" type="button" :disabled="repairLoading || !repairState" @click="saveRepairDocument">Validate and Save</button>
             <button class="secondary-action" type="button" :disabled="repairLoading" @click="loadRepairDocument">Reload</button>
@@ -1053,20 +1252,73 @@ onUnmounted(() => {
             </form>
           </div>
         </article>
-        <article v-else class="content-card">
+        <article v-else class="content-card editor-card manual-upload-card">
           <div class="content-card-heading">
             <div>
-              <p class="eyebrow">Read-only overview</p>
-              <h3>{{ activeAreaDetails.label }}</h3>
+              <p class="eyebrow">One file</p>
+              <h3>Manual Upload</h3>
             </div>
-            <span class="ready-badge">Ready</span>
+            <span v-if="manualLoading" class="dirty-badge">Uploading</span>
+            <span v-else class="ready-badge">Ready</span>
           </div>
-          <p>{{ activeAreaDetails.description }}</p>
-          <p v-if="activeArea === 'manual-upload'" class="muted-copy">Manual Upload controls will be enabled in the next desktop slice.</p>
-          <div v-else class="definition-list">
-            <span v-for="name in state?.shorteners" :key="name">{{ name }}</span>
-            <span v-if="activeArea === 'shorteners' && !state?.shortenersPresent" class="muted-copy">No Shorteners configured.</span>
-          </div>
+          <p>Choose one regular file or drop it below. Your Configuration Set stays unchanged.</p>
+          <form class="editor-form manual-upload-form" @submit.prevent="startManualUpload">
+            <section id="manual-upload-drop" class="manual-upload-drop" data-file-drop-target>
+              <strong>{{ manualFile ? manualFile.name : 'Drop one file here' }}</strong>
+              <span v-if="manualFile">{{ manualFile.path }} · {{ manualFile.size.toLocaleString() }} bytes</span>
+              <span v-else>Directories and multiple-file drops are not supported.</span>
+              <button class="secondary-action" type="button" :disabled="manualLoading" @click="chooseManualUploadFile">Choose file</button>
+            </section>
+
+            <label class="field-label" for="manual-uploader">Uploader</label>
+            <select id="manual-uploader" v-model="manualUploaderChoice" :disabled="manualLoading">
+              <option value="default">Use Global Configuration ({{ state?.defaultUploader }})</option>
+              <option v-for="name in state?.uploaders ?? []" :key="name" :value="`named:${name}`">{{ name }}</option>
+            </select>
+
+            <label class="field-label" for="manual-shortener">Shortener</label>
+            <select id="manual-shortener" v-model="manualShortenerChoice" :disabled="manualLoading">
+              <option value="default">Use Global Configuration ({{ state?.defaultShortener || 'None' }})</option>
+              <option value="none">None</option>
+              <option v-for="name in state?.shorteners ?? []" :key="name" :value="`named:${name}`">{{ name }}</option>
+            </select>
+
+            <label class="field-label" for="manual-clipboard">Clipboard</label>
+            <select id="manual-clipboard" v-model="manualClipboard" :disabled="manualLoading">
+              <option value="default">Use Global Configuration ({{ state?.copyToClipboard ? 'Enabled' : 'Disabled' }})</option>
+              <option value="enabled">Copy Final URL</option>
+              <option value="disabled">Do not copy</option>
+            </select>
+
+            <label class="field-label" for="manual-timeout">Timeout (optional)</label>
+            <input id="manual-timeout" v-model="manualTimeout" placeholder="30s or 10m" :disabled="manualLoading" />
+
+            <p v-if="anyDirty" class="muted-copy" role="status">Save or discard Configuration Set edits before uploading.</p>
+            <p v-if="manualError" class="inline-error" role="alert">{{ manualError }}</p>
+
+            <template v-if="manualResult?.success">
+              <section class="manual-upload-result inline-success" role="status">
+                <strong>Upload complete</strong>
+                <a :href="manualResult.finalURL" target="_blank" rel="noreferrer">{{ manualResult.finalURL }}</a>
+                <span v-if="manualResult.originalURL !== manualResult.finalURL">Original URL: {{ manualResult.originalURL }}</span>
+                <span v-for="warning in manualResult.warnings ?? []" :key="warning">Warning: {{ warning }}</span>
+                <button class="secondary-action" type="button" @click="copyManualUploadFinalURL">Copy Final URL</button>
+              </section>
+            </template>
+            <section v-else-if="manualResult?.failure" class="manual-upload-result inline-error" role="alert">
+              <strong>{{ manualResult.failure.canceled ? 'Upload canceled' : 'Upload failed' }}</strong>
+              <span>Stage: {{ manualResult.failure.stage }}</span>
+              <span v-if="manualResult.failure.statusCode">HTTP: {{ manualResult.failure.statusCode }}</span>
+              <span>{{ manualResult.failure.message }}</span>
+              <button class="secondary-action" type="button" :disabled="manualLoading" @click="startManualUpload">Retry</button>
+            </section>
+            <p v-if="manualNotice" class="inline-success" role="status">{{ manualNotice }}</p>
+
+            <div class="editor-actions">
+              <button class="primary-action" type="submit" :disabled="!manualReady">{{ manualLoading ? 'Uploading…' : 'Upload file' }}</button>
+              <button v-if="manualLoading" class="secondary-action" type="button" @click="cancelManualUpload">Cancel</button>
+            </div>
+          </form>
         </article>
       </section>
       <div v-if="dirtyAction" class="modal-backdrop" role="presentation">
@@ -1078,6 +1330,17 @@ onUnmounted(() => {
             <button class="primary-action" type="button" @click="resolveDirtyAction('save')">Save</button>
             <button class="secondary-action" type="button" @click="resolveDirtyAction('discard')">Discard</button>
             <button class="secondary-action" type="button" @click="resolveDirtyAction('cancel')">Cancel</button>
+          </div>
+        </section>
+      </div>
+      <div v-if="manualCloseRequested" class="modal-backdrop" role="presentation">
+        <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-close-dialog-title">
+          <p class="eyebrow">Manual Upload active</p>
+          <h3 id="manual-close-dialog-title">Cancel upload and close?</h3>
+          <p>Closing cancels the active upload and waits for its resources to be released.</p>
+          <div class="editor-actions">
+            <button class="primary-action" type="button" @click="resolveManualUploadClose('confirm')">Cancel upload and close</button>
+            <button class="secondary-action" type="button" @click="resolveManualUploadClose('cancel')">Keep uploading</button>
           </div>
         </section>
       </div>
