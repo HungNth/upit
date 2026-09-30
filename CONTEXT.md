@@ -4,6 +4,14 @@ Upit is an on-demand file-upload product for interactive and automated use. Each
 
 ## Language
 
+**Global Configuration**:
+The per-user document that selects the default Uploader, optional default Shortener, and clipboard behavior.
+_Avoid_: Global config, Main config, Settings
+
+**Configuration Set**:
+The per-user collection of the Global Configuration and the documents defining available Uploaders and optional Shorteners.
+_Avoid_: Config, Config directory, Configuration files
+
 **Uploader**:
 A named definition of a remote upload destination, including how to send a file and identify the uploaded file URL in the response.
 _Avoid_: Uploader profile, Custom uploader

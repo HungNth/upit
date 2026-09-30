@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"regexp"
 
 	"github.com/theory/jsonpath"
@@ -40,10 +39,32 @@ func failuref(stage string, cause error, format string, args ...any) *Failure {
 }
 
 type settings struct {
-	Version          int    `json:"version"`
-	DefaultUploader  string `json:"defaultUploader"`
-	DefaultShortener string `json:"defaultShortener"`
-	CopyToClipboard  bool   `json:"copyToClipboard"`
+	Version             int    `json:"version"`
+	DefaultUploader     string `json:"defaultUploader"`
+	DefaultShortener    string `json:"defaultShortener"`
+	CopyToClipboard     bool   `json:"copyToClipboard"`
+	hasVersion          bool
+	hasDefaultUploader  bool
+	hasDefaultShortener bool
+	hasCopyToClipboard  bool
+}
+
+func (s *settings) UnmarshalJSON(data []byte) error {
+	type plain settings
+	var decoded plain
+	fields, err := decodeStrictObject(data, &decoded)
+	if err != nil {
+		return err
+	}
+	if err := rejectNullFields(fields, "version", "defaultUploader", "defaultShortener", "copyToClipboard"); err != nil {
+		return err
+	}
+	*s = settings(decoded)
+	_, s.hasVersion = fields["version"]
+	_, s.hasDefaultUploader = fields["defaultUploader"]
+	_, s.hasDefaultShortener = fields["defaultShortener"]
+	_, s.hasCopyToClipboard = fields["copyToClipboard"]
+	return nil
 }
 
 type uploaderDocument struct {
@@ -59,7 +80,22 @@ type shortenerDocument struct {
 type shortener struct {
 	Request         shortenerRequestConfig `json:"request"`
 	Response        responseConfig         `json:"response"`
+	hasRequest      bool
+	hasResponse     bool
 	sensitiveValues []string
+}
+
+func (s *shortener) UnmarshalJSON(data []byte) error {
+	type plain shortener
+	var decoded plain
+	fields, err := decodeStrictObject(data, &decoded)
+	if err != nil {
+		return err
+	}
+	*s = shortener(decoded)
+	_, s.hasRequest = fields["request"]
+	_, s.hasResponse = fields["response"]
+	return nil
 }
 
 type shortenerRequestConfig struct {
@@ -70,10 +106,39 @@ type shortenerRequestConfig struct {
 	Data    map[string]any    `json:"data"`
 }
 
+func (s *shortenerRequestConfig) UnmarshalJSON(data []byte) error {
+	type plain shortenerRequestConfig
+	var decoded plain
+	fields, err := decodeStrictObject(data, &decoded)
+	if err != nil {
+		return err
+	}
+	if err := rejectNullFields(fields, "method", "url", "headers", "query", "data"); err != nil {
+		return err
+	}
+	*s = shortenerRequestConfig(decoded)
+	return nil
+}
+
 type uploader struct {
 	Request         requestConfig  `json:"request"`
 	Response        responseConfig `json:"response"`
+	hasRequest      bool
+	hasResponse     bool
 	sensitiveValues []string
+}
+
+func (u *uploader) UnmarshalJSON(data []byte) error {
+	type plain uploader
+	var decoded plain
+	fields, err := decodeStrictObject(data, &decoded)
+	if err != nil {
+		return err
+	}
+	*u = uploader(decoded)
+	_, u.hasRequest = fields["request"]
+	_, u.hasResponse = fields["response"]
+	return nil
 }
 
 type requestConfig struct {
@@ -98,6 +163,9 @@ func (r *requestConfig) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := rejectNullFields(fields, "method", "url", "headers", "query", "body", "fileField", "fields", "data"); err != nil {
+		return err
+	}
 	*r = requestConfig(decoded)
 	_, r.hasFileField = fields["fileField"]
 	_, r.hasFields = fields["fields"]
@@ -106,8 +174,24 @@ func (r *requestConfig) UnmarshalJSON(data []byte) error {
 }
 
 type responseConfig struct {
-	URL   extractorConfig  `json:"url"`
-	Error *extractorConfig `json:"error"`
+	URL    extractorConfig  `json:"url"`
+	Error  *extractorConfig `json:"error"`
+	hasURL bool
+}
+
+func (r *responseConfig) UnmarshalJSON(data []byte) error {
+	type plain responseConfig
+	var decoded plain
+	fields, err := decodeStrictObject(data, &decoded)
+	if err != nil {
+		return err
+	}
+	if err := rejectNullFields(fields, "url", "error"); err != nil {
+		return err
+	}
+	*r = responseConfig(decoded)
+	_, r.hasURL = fields["url"]
+	return nil
 }
 
 type extractorConfig struct {
@@ -133,6 +217,9 @@ func (e *extractorConfig) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := rejectNullFields(fields, "type", "path", "header", "pattern"); err != nil {
+		return err
+	}
 	*e = extractorConfig(decoded)
 	_, e.hasPath = fields["path"]
 	_, e.hasHeader = fields["header"]
@@ -150,26 +237,27 @@ func (e *extractorConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func decodeStrictObject(data []byte, target any) (map[string]json.RawMessage, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return nil, err
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("multiple JSON values")
+func rejectNullFields(fields map[string]json.RawMessage, names ...string) error {
+	for _, name := range names {
+		raw, ok := fields[name]
+		if ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return fmt.Errorf("%s must not be null", name)
 		}
-		return nil, err
 	}
+	return nil
+}
 
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
+func decodeStrictObject(data []byte, target any) (map[string]json.RawMessage, error) {
+	_, err := decodeJSON(data, target)
+	if err != nil {
 		return nil, err
 	}
-	if fields == nil {
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawFields); err != nil {
+		return nil, err
+	}
+	if rawFields == nil {
 		return nil, fmt.Errorf("must be a JSON object")
 	}
-	return fields, nil
+	return rawFields, nil
 }

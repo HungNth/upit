@@ -1,0 +1,308 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Upit Uploader Document",
+    "description": "Named Uploader definitions for a Configuration Set. Go remains authoritative for HTTP method and URL semantics, header validity and case-insensitive uniqueness, MIME parsing, expression compilation, recursive placeholder counts, permissions, and cross-document references.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "version",
+        "uploaders"
+    ],
+    "properties": {
+        "version": {
+            "const": 2,
+            "description": "Uploader protocol version 2. Version 1 is rejected rather than migrated."
+        },
+        "uploaders": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+                "$ref": "#/$defs/uploader"
+            },
+            "description": "Definition names are case-sensitive. Runtime validation additionally requires non-empty printable Unicode names without leading or trailing Unicode whitespace."
+        }
+    },
+    "$defs": {
+        "stringMap": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            },
+            "propertyNames": {
+                "minLength": 1
+            }
+        },
+        "uploader": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "request",
+                "response"
+            ],
+            "properties": {
+                "request": {
+                    "$ref": "#/$defs/uploaderRequest"
+                },
+                "response": {
+                    "$ref": "#/$defs/uploaderResponse"
+                }
+            }
+        },
+        "uploaderRequest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "method",
+                "url",
+                "body"
+            ],
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Go validates the HTTP method syntax."
+                },
+                "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Runtime validation requires an absolute HTTP(S) URL."
+                },
+                "headers": {
+                    "$ref": "#/$defs/stringMap",
+                    "description": "Runtime validation rejects invalid names, control characters, managed transport headers, and case-insensitive duplicates."
+                },
+                "query": {
+                    "$ref": "#/$defs/stringMap"
+                },
+                "body": {
+                    "enum": [
+                        "multipart",
+                        "binary",
+                        "form",
+                        "json"
+                    ]
+                },
+                "fileField": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "fields": {
+                    "$ref": "#/$defs/stringMap",
+                    "description": "Form mode runtime validation requires exactly one full-string {input} value."
+                },
+                "data": {
+                    "type": "object",
+                    "description": "JSON mode accepts an object; runtime validation requires exactly one recursively located string value equal to {input}."
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "body": {
+                                "const": "multipart"
+                            }
+                        },
+                        "required": [
+                            "body"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "fileField"
+                        ],
+                        "not": {
+                            "required": [
+                                "data"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "body": {
+                                "const": "binary"
+                            }
+                        },
+                        "required": [
+                            "body"
+                        ]
+                    },
+                    "then": {
+                        "not": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "fileField"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "fields"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "body": {
+                                "const": "form"
+                            }
+                        },
+                        "required": [
+                            "body"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "fields"
+                        ],
+                        "not": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "fileField"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "body": {
+                                "const": "json"
+                            }
+                        },
+                        "required": [
+                            "body"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "data"
+                        ],
+                        "not": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "fileField"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "fields"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        "uploaderResponse": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "url": {
+                    "$ref": "#/$defs/uploaderExtractor"
+                },
+                "error": {
+                    "$ref": "#/$defs/uploaderExtractor",
+                    "description": "Optional provider-error extractor. It never creates upload success or fallback behavior."
+                }
+            }
+        },
+        "uploaderExtractor": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "type",
+                        "path"
+                    ],
+                    "properties": {
+                        "type": {
+                            "const": "json"
+                        },
+                        "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Go compiles this as an RFC 9535 JSONPath expression and requires one string result."
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "type",
+                        "header"
+                    ],
+                    "properties": {
+                        "type": {
+                            "const": "header"
+                        },
+                        "header": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Go validates the response-header name and requires exactly one value."
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "type",
+                        "pattern"
+                    ],
+                    "properties": {
+                        "type": {
+                            "const": "regex"
+                        },
+                        "pattern": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Go compiles the regular expression and validates the optional numeric or named group."
+                        },
+                        "group": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "type"
+                    ],
+                    "properties": {
+                        "type": {
+                            "const": "body"
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,30 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Upit Global Configuration",
+    "description": "The Global Configuration selects defaults for one Configuration Set. Runtime validation also enforces usable printable names and cross-document references.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "version",
+        "defaultUploader",
+        "copyToClipboard"
+    ],
+    "properties": {
+        "version": {
+            "const": 2,
+            "description": "The supported Global Configuration version. Upit does not migrate other versions."
+        },
+        "defaultUploader": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A case-sensitive Uploader name. Runtime validation requires printable Unicode without leading or trailing Unicode whitespace and a matching Uploader definition."
+        },
+        "defaultShortener": {
+            "type": "string",
+            "description": "An optional case-sensitive Shortener name. The empty string clears the selection; runtime validation checks the optional-document matrix and matching definition."
+        },
+        "copyToClipboard": {
+            "type": "boolean"
+        }
+    }
+}

@@ -43,11 +43,11 @@ When Upit is not being used, no Upit process should remain running.
 
 ---
 
-## Current v0.3 implementation
+## Current v0.4 implementation
 
-This section is authoritative for the implemented CLI runtime. The application module in `internal/app` is the deep upload module: it owns Uploader configuration validation, Request Body Modes, HTTP execution, bounded response handling, Response Extractors, URL validation, and structured failures. The CLI is the external seam; Shortener processing and clipboard work remain coordinated by the application module. v0.3 does not create public `internal/request` or `internal/response` packages, pass-through strategy interfaces, or provider adapters.
+This section is authoritative for the implemented CLI runtime. The application module in `internal/app` owns strict Configuration Set loading and validation, safe Global Configuration persistence, Uploader body modes, HTTP execution, bounded response handling, Response Extractors, URL validation, Shortener processing, clipboard work, and structured failures. The CLI is the external seam for uploads and non-interactive Configuration Management; it does not duplicate validation or persistence logic.
 
-Sections that describe a separate Request Builder, Response Parser, or broader package tree are historical architecture proposals. They remain useful roadmap context, but they are not the v0.3 implementation contract; ADR-0008 and this section take precedence.
+Sections that describe a separate Request Builder, Response Parser, or broader package tree are historical architecture proposals. They remain useful roadmap context, but they are not the v0.4 implementation contract; ADR-0008, ADR-0009, and this section take precedence.
 
 ## 2. Product Model
 
@@ -412,15 +412,18 @@ without guessing the format of existing user files.
 
 ## 12. JSON Schema
 
-JSON Schema publication is planned for v0.4 and is not part of the strict runtime validation delivered by v0.1.
+JSON Schema publication is delivered in v0.4 alongside strict runtime validation. Go remains the execution authority for protocol semantics, expression compilation, filesystem permissions, and cross-document references.
 
-Planned structure:
+Published artifacts:
 
 ```text
 schemas/
 ├── config.schema.json
-└── custom-uploader.schema.json
+├── custom-uploader.schema.json
+└── custom-shortener.schema.json
 ```
+
+Editors associate these schemas by Configuration Set filename; user documents do not gain a `$schema` member.
 
 Benefits:
 
@@ -1492,14 +1495,14 @@ https://files.example.com/file.zip
 - Managed transport headers and incompatible mode/extractor fields are rejected during whole-document validation
 - CLI flags, output/result fields, Shortener version 1, and the headless runtime remain unchanged
 
-### v0.4 — Configuration Management
+### v0.4 — Configuration Management (implemented)
 
-- CLI configuration commands
-- Default uploader
-- Default shortener
-- Config validation
-- JSON Schema
-- Better diagnostics
+- Non-interactive `config path`, `show`, `validate`, list, and targeted Global Configuration mutation commands
+- Shared strict decoder with duplicate-key, unknown-field, deterministic-path, redacted diagnostics
+- Safe staged Global Configuration publication with native POSIX/Windows replacement behavior
+- Optional Shortener-document validation matrix and explicit clipboard state management
+- Draft 2020-12 schemas for Global Configuration, Uploader, and Shortener documents
+- Uploader and Shortener documents remain manually managed; no migration, editor, or provider adapter was added
 
 ### v0.5 — Wails 3 Desktop
 
@@ -1528,7 +1531,7 @@ All integrations should invoke Upit on demand.
 
 ---
 
-## 44. Final Architecture Summary (v0.3 current seam)
+## 44. Final Architecture Summary (v0.4 current seam)
 
 ```text
 ┌──────────────────────────────┐

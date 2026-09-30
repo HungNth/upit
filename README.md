@@ -9,13 +9,15 @@ Upit is a headless-first, cross-platform file uploader. It streams one file to a
 - Named, strictly validated HTTP Uploaders with four Request Body Modes
 - JSONPath, response-header, regex, and raw-body Response Extractors
 - Optional URL shortening via named, configurable Shorteners
+- Non-interactive Configuration Management commands for reading, validating, and changing Global Configuration
+- Hand-written Draft 2020-12 schemas for the three Configuration Set documents
 - Plain URL or machine-readable JSON output
 - Context cancellation and optional whole-invocation upload timeout
 - Optional, nonfatal clipboard copying
 - Windows, macOS, and headless Linux support
 
 > [!NOTE]
-> v0.3 is CLI-only. It adds Uploader body modes and response extractors without changing command flags, output fields, Shortener schema, or desktop scope.
+> v0.4 remains CLI-only and headless-first. It adds non-interactive Configuration Management and published schemas without adding a GUI, daemon, resident worker, or new upload protocol.
 
 ## Requirements
 
@@ -61,6 +63,18 @@ chmod 600 ~/.config/upit/custom-uploader.json ~/.config/upit/custom-shortener.js
 ```
 
 On Unix, Upit refuses to run when `custom-uploader.json` or `custom-shortener.json` (when used) has group or other permission bits present.
+
+### Editor schema associations
+
+Configuration documents stay free of a `$schema` member. In an editor, associate each filename with the repository schema while working inside a Configuration Set:
+
+| Filename | Draft 2020-12 schema |
+| --- | --- |
+| `config.json` | `schemas/config.schema.json` |
+| `custom-uploader.json` | `schemas/custom-uploader.schema.json` |
+| `custom-shortener.json` | `schemas/custom-shortener.schema.json` |
+
+The schemas cover structural rules expressible in Draft 2020-12. Go remains the production authority for protocol semantics, expression compilation, permissions, and cross-document references.
 
 ### `config.json`
 
@@ -167,6 +181,36 @@ For an existing multipart Uploader, the migration is mechanical: change only the
 
 Configuration is strict: unknown fields, unsupported versions, invalid request settings, and invalid JSONPath expressions fail before any network request.
 
+### Configuration Management commands
+
+Configuration commands use stdout for success, stderr for configuration failures, and exit 2 for invalid command usage. They do not support `--json`, prompts, editors, or alternate Configuration Set locations.
+
+```bash
+./bin/upit config path
+./bin/upit config show
+./bin/upit config list-uploaders
+./bin/upit config list-shorteners
+./bin/upit config validate
+```
+
+`config path` prints the fixed absolute `~/.config/upit/` directory even when it does not exist. `show` prints `Default Uploader`, `Default Shortener` (`none` when clear), and `Copy to Clipboard`. List commands validate only their own document; an absent optional Shortener document prints `No Shorteners configured.`.
+
+The complete validator requires `config.json` and `custom-uploader.json`. A Shortener document may be absent only when no default Shortener is selected; when present, every Shortener is validated. A selected default requires a matching valid Shortener.
+
+Only Global Configuration fields have mutation commands:
+
+```bash
+./bin/upit config set-default-uploader <name>
+./bin/upit config set-default-shortener <name>
+./bin/upit config clear-default-shortener
+./bin/upit config enable-clipboard
+./bin/upit config disable-clipboard
+```
+
+Mutations preserve unrelated Global Configuration fields, print literal confirmations, validate before publishing, and do not create missing directories or documents. Uploader and Shortener creation, editing, renaming, deletion, migration, and interactive management remain manual or out of scope.
+
+Mutations refuse a symlinked or supported Windows reparse-point Global Configuration during point-in-time preflight. Writes then use a uniquely staged `.config.json.upit-tmp-*` file, complete writes, sync, close, and the native replacement primitive. No backup or lock file is created; concurrent successful writers are last-completed-write-wins. POSIX mode bits are preserved. Windows replacement does not promise POSIX rollback or extended ACL/stream preservation. If Windows publication state is ambiguous, Upit retains the staged recovery file and reports its absolute path. This is not a power-loss durability guarantee.
+
 ## Usage
 
 Upload with the configured default Uploader:
@@ -272,4 +316,4 @@ go test ./...
 go vet ./...
 ```
 
-Architecture, domain language, and accepted decisions are documented under `docs/`, `CONTEXT.md`, and `.scratch/upit-v0.1/` through `.scratch/upit-v0.3/`.
+Architecture, domain language, and accepted decisions are documented under `docs/`, `CONTEXT.md`, and `.scratch/upit-v0.1/` through `.scratch/upit-v0.4/`.

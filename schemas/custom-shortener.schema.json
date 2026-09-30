@@ -1,0 +1,118 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Upit Shortener Document",
+    "description": "Named Shortener definitions for a Configuration Set. Go remains authoritative for HTTP method and URL semantics, header validity and case-insensitive uniqueness, JSONPath compilation, recursive placeholder counts, permissions, and cross-document references.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "version",
+        "shorteners"
+    ],
+    "properties": {
+        "version": {
+            "const": 1,
+            "description": "Shortener document version 1. Other versions are rejected rather than migrated."
+        },
+        "shorteners": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+                "$ref": "#/$defs/shortener"
+            },
+            "description": "Definition names are case-sensitive. Runtime validation additionally requires non-empty printable Unicode names without leading or trailing Unicode whitespace."
+        }
+    },
+    "$defs": {
+        "stringMap": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            },
+            "propertyNames": {
+                "minLength": 1
+            }
+        },
+        "shortener": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "request",
+                "response"
+            ],
+            "properties": {
+                "request": {
+                    "$ref": "#/$defs/shortenerRequest"
+                },
+                "response": {
+                    "$ref": "#/$defs/shortenerResponse"
+                }
+            }
+        },
+        "shortenerRequest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "method",
+                "url",
+                "data"
+            ],
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Go validates HTTP method syntax."
+                },
+                "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Runtime validation requires an absolute HTTP(S) URL."
+                },
+                "headers": {
+                    "$ref": "#/$defs/stringMap",
+                    "description": "Runtime validation rejects invalid names, control characters, Content-Type ownership, and case-insensitive duplicates."
+                },
+                "query": {
+                    "$ref": "#/$defs/stringMap"
+                },
+                "data": {
+                    "type": "object",
+                    "description": "Runtime validation requires exactly one recursively located string value equal to {input}."
+                }
+            }
+        },
+        "shortenerResponse": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "url": {
+                    "$ref": "#/$defs/jsonExtractor"
+                },
+                "error": {
+                    "$ref": "#/$defs/jsonExtractor",
+                    "description": "Optional JSON-only provider-error extractor."
+                }
+            }
+        },
+        "jsonExtractor": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "type",
+                "path"
+            ],
+            "properties": {
+                "type": {
+                    "const": "json"
+                },
+                "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Go compiles this as an RFC 9535 JSONPath expression and requires one string result."
+                }
+            }
+        }
+    }
+}
