@@ -1,7 +1,32 @@
 # Upit Desktop frontend
 
-Vue 3, TypeScript, Vite, and locally owned shadcn-vue primitives run inside Wails 3. The generated bindings under `bindings/` are refreshed with:
+This Vue 3, TypeScript, and Vite project belongs to the Wails 3 executable in `cmd/upit-desktop`. It stays below that Go package because `main.go` embeds `frontend/dist` with a package-relative `//go:embed` pattern.
+
+## Setup and build
+
+Install frontend dependencies after cloning or changing `package-lock.json`:
 
 ```bash
-wails3 generate bindings ./cmd/upit-desktop -i -d ./cmd/upit-desktop/frontend/bindings
+make setup-desktop
 ```
+
+Build the frontend and then the desktop binary:
+
+```bash
+make build-desktop
+```
+
+The frontend step type-checks Vue and writes bundled JavaScript and CSS to `dist/`. The Go step then embeds that output into `bin/upit-desktop`. The generated `dist/` files are committed so the Go package remains buildable from a clean checkout.
+
+## Wails bindings
+
+`bindings/` contains generated JavaScript wrappers and model declarations for exported Go interfaces. CSS and frontend-only JavaScript changes do not require binding generation.
+
+Regenerate bindings only after changing an exported Go service method or model used by the frontend:
+
+```bash
+make generate-desktop-bindings
+make build-desktop
+```
+
+The generated `bindings/` files are committed and must not be edited manually.

@@ -2,6 +2,7 @@ BINARY_NAME := upit
 CMD_DIR := ./cmd/upit
 DESKTOP_BINARY_NAME := upit-desktop
 DESKTOP_CMD_DIR := ./cmd/upit-desktop
+DESKTOP_FRONTEND_DIR := $(DESKTOP_CMD_DIR)/frontend
 BUILD_DIR := bin
 
 # Detect OS and set OS-specific commands
@@ -32,7 +33,7 @@ else
     RUN_CMD := ./$(TARGET)
 endif
 
-.PHONY: all build build-desktop run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
+.PHONY: all build setup-desktop build-desktop-frontend generate-desktop-bindings build-desktop run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
 
 all: build
 
@@ -44,8 +45,20 @@ build: $(BUILD_DIR)
 	go build -o "$(TARGET)" $(CMD_DIR)
 	@echo Built $(TARGET) for $(DETECTED_OS)
 
-## build-desktop: Build upit-desktop for the current operating system
-build-desktop: $(BUILD_DIR)
+## setup-desktop: Install desktop frontend dependencies from the lockfile
+setup-desktop:
+	npm --prefix "$(DESKTOP_FRONTEND_DIR)" ci
+
+## build-desktop-frontend: Type-check and bundle the desktop frontend
+build-desktop-frontend:
+	npm --prefix "$(DESKTOP_FRONTEND_DIR)" run build
+
+## generate-desktop-bindings: Regenerate Wails bindings after exported Go interfaces change
+generate-desktop-bindings:
+	wails3 generate bindings $(DESKTOP_CMD_DIR) -i -d "$(DESKTOP_FRONTEND_DIR)/bindings"
+
+## build-desktop: Rebuild frontend assets, then build upit-desktop for the current operating system
+build-desktop: build-desktop-frontend $(BUILD_DIR)
 	go build -o "$(DESKTOP_TARGET)" $(DESKTOP_CMD_DIR)
 	@echo Built $(DESKTOP_TARGET) for $(DETECTED_OS)
 
@@ -110,10 +123,13 @@ clean:
 help:
 	@echo Usage: make [target]
 	@echo Targets:
-	@echo "  build          Build binary for current host OS ($(TARGET))"
-	@echo "  build-all      Cross-compile for Windows, Linux, and macOS"
-	@echo "  build-desktop  Build upit-desktop for current host OS ($(DESKTOP_TARGET))"
-	@echo "  run            Build and run binary (e.g. make run ARGS=\"--help\")"
+	@echo "  build                    Build binary for current host OS ($(TARGET))"
+	@echo "  build-all                Cross-compile for Windows, Linux, and macOS"
+	@echo "  setup-desktop            Install desktop frontend dependencies from package-lock.json"
+	@echo "  build-desktop-frontend   Type-check and bundle desktop frontend assets"
+	@echo "  generate-desktop-bindings Regenerate Wails bindings after Go interface changes"
+	@echo "  build-desktop            Build frontend assets and upit-desktop ($(DESKTOP_TARGET))"
+	@echo "  run                      Build and run binary (e.g. make run ARGS=\"--help\")"
 	@echo "  build-windows  Build binary for Windows (amd64)"
 	@echo "  build-linux    Build binaries for Linux (amd64, arm64)"
 	@echo "  build-darwin   Build binaries for macOS (amd64, arm64)"
