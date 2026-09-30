@@ -134,7 +134,7 @@ func main() {
 		MinHeight:        600,
 		URL:              "/",
 		InitialPosition:  application.WindowCentered,
-		BackgroundColour: application.NewRGB(15, 23, 42),
+		BackgroundColour: application.NewRGB(9, 9, 11),
 	})
 	service.close = window.Close
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
