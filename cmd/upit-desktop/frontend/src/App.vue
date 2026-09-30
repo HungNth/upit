@@ -1,0 +1,1098 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { Events } from '@wailsio/runtime'
+import {
+  ConfirmClose,
+  CreateInitialConfigurationSet,
+  DeleteShortener,
+  DeleteUploader,
+  LoadGlobalConfigurationEditor,
+  LoadRepairDocument,
+  LoadShortenerEditor,
+  LoadUploaderEditor,
+  RenameShortener,
+  RenameUploader,
+  SaveGlobalConfiguration,
+  SaveRepairDocument,
+  SaveShortenerEditor,
+  SaveUploaderEditor,
+  SetGlobalConfigurationDirty,
+  StartupState,
+} from '../bindings/github.com/HungNth/upit/cmd/upit-desktop/desktopservice.js'
+import type {
+  DesktopStartupState,
+  GlobalConfigurationDraft,
+  GlobalConfigurationEditorState,
+  RepairDocumentDraft,
+  RepairDocumentKind,
+  RepairDocumentState,
+  ShortenerEditorDraft,
+  ShortenerEditorState,
+  UploaderEditorDraft,
+  UploaderEditorState,
+} from '../bindings/github.com/HungNth/upit/internal/app/models.js'
+type Area = 'manual-upload' | 'global-configuration' | 'uploaders' | 'shorteners'
+type DirtyAction = 'navigate' | 'refresh'
+
+const areas: Array<{ id: Area; label: string; description: string }> = [
+  { id: 'manual-upload', label: 'Manual Upload', description: 'Upload one file interactively.' },
+  { id: 'global-configuration', label: 'Global Configuration', description: 'Choose defaults and clipboard behavior.' },
+  { id: 'uploaders', label: 'Uploaders', description: 'Inspect available upload destinations.' },
+  { id: 'shorteners', label: 'Shorteners', description: 'Inspect optional URL shortening destinations.' },
+]
+
+const activeArea = ref<Area>('manual-upload')
+const activeAreaDetails = computed(() => areas.find((area) => area.id === activeArea.value) ?? areas[0])
+const dirtyEditorLabel = computed(() => activeArea.value === 'uploaders' ? 'Uploader' : activeArea.value === 'shorteners' ? 'Shortener' : 'Global Configuration')
+const state = ref<DesktopStartupState | null>(null)
+const loading = ref(true)
+const error = ref('')
+const setupLoading = ref(false)
+const setupError = ref('')
+const setupGlobal = reactive<GlobalConfigurationDraft>({ revision: '', defaultUploader: '', defaultShortener: '', copyToClipboard: false })
+const setupUploader = reactive<UploaderEditorDraft>({
+	revision: '',
+	originalName: '',
+	name: '',
+	request: { method: '', url: '', headers: [], query: [], body: '', fileField: '', fields: [], dataJSON: '' },
+	response: { url: { type: '', path: '', header: '', pattern: '', group: '' }, error: null },
+})
+type RepairKind = 'config' | 'uploaders' | 'shorteners'
+const repairKind = ref<RepairKind>('config')
+const repairState = ref<RepairDocumentState | null>(null)
+const repairLocked = ref(true)
+const repairLoading = ref(false)
+const repairError = ref('')
+function countSetupInputs(value: unknown): number {
+	if (value === '{input}') return 1
+	if (Array.isArray(value)) return value.reduce((count, item) => count + countSetupInputs(item), 0)
+	if (value && typeof value === 'object') return Object.values(value).reduce((count, item) => count + countSetupInputs(item), 0)
+	return 0
+}
+
+function setupJSONReady(text: string) {
+	try {
+		const value = JSON.parse(text)
+		return Boolean(value && typeof value === 'object' && !Array.isArray(value) && countSetupInputs(value) === 1)
+	} catch {
+		return false
+	}
+}
+
+const setupReady = computed(() => {
+	const request = setupUploader.request
+	const urlReady = /^https?:\/\/[^\s]+$/i.test(request.url)
+	const bodyReady = request.body === 'binary'
+		? true
+		: request.body === 'multipart'
+			? Boolean(request.fileField)
+			: request.body === 'form'
+				? request.fields.some((entry) => Boolean(entry.key) && entry.value === '{input}')
+				: request.body === 'json' && setupJSONReady(request.dataJSON)
+	const extractor = setupUploader.response.url
+	const extractorReady = extractor.type === 'body'
+		|| (extractor.type === 'json' && Boolean(extractor.path))
+		|| (extractor.type === 'header' && Boolean(extractor.header))
+		|| (extractor.type === 'regex' && Boolean(extractor.pattern))
+	return Boolean(!setupGlobal.defaultShortener && setupGlobal.defaultUploader && setupUploader.name && request.method && urlReady && bodyReady && extractorReady)
+})
+const globalEditor = reactive<GlobalConfigurationEditorState>({
+  configurationPath: '',
+  revision: '',
+  defaultUploader: '',
+  defaultShortener: '',
+  copyToClipboard: false,
+  uploaders: [],
+  shorteners: [],
+  shortenersPresent: false,
+})
+const globalSaved = ref('')
+const globalLoading = ref(false)
+const globalError = ref('')
+const globalNotice = ref('')
+const dirtyAction = ref<DirtyAction | null>(null)
+const pendingArea = ref<Area | null>(null)
+const closeRequested = ref(false)
+let stopCloseRequested: (() => void) | undefined
+const globalDraft = computed<GlobalConfigurationDraft>(() => ({
+  revision: globalEditor.revision,
+  defaultUploader: globalEditor.defaultUploader,
+  defaultShortener: globalEditor.defaultShortener,
+  copyToClipboard: globalEditor.copyToClipboard,
+}))
+const globalDirty = computed(() => Boolean(globalEditor.revision) && globalSaved.value !== JSON.stringify(globalDraft.value))
+const uploaderState = ref<UploaderEditorState | null>(null)
+const uploaderSaved = ref('')
+const uploaderLoading = ref(false)
+const uploaderError = ref('')
+const pendingUploader = ref<string | null>(null)
+const revealedSecrets = ref<Record<string, boolean>>({})
+const uploaderDirty = computed(() => Boolean(uploaderState.value?.draft.revision) && uploaderSaved.value !== JSON.stringify(uploaderState.value?.draft))
+const shortenerState = ref<ShortenerEditorState | null>(null)
+const shortenerSaved = ref('')
+const shortenerLoading = ref(false)
+const shortenerError = ref('')
+const pendingShortener = ref<string | null>(null)
+const shortenerDirty = computed(() => Boolean(shortenerState.value) && shortenerSaved.value !== JSON.stringify(shortenerState.value?.draft))
+const anyDirty = computed(() => globalDirty.value || uploaderDirty.value || shortenerDirty.value)
+watch(anyDirty, (dirty) => {
+ 	void SetGlobalConfigurationDirty(dirty)
+
+})
+function errorMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+function applyGlobalEditor(loaded: GlobalConfigurationEditorState) {
+  globalEditor.configurationPath = loaded.configurationPath
+  globalEditor.revision = loaded.revision
+  globalEditor.defaultUploader = loaded.defaultUploader
+  globalEditor.defaultShortener = loaded.defaultShortener
+  globalEditor.copyToClipboard = loaded.copyToClipboard
+  globalEditor.uploaders = loaded.uploaders ?? []
+  globalEditor.shorteners = loaded.shorteners ?? []
+  globalEditor.shortenersPresent = loaded.shortenersPresent
+  if (state.value) {
+    state.value.defaultUploader = loaded.defaultUploader
+    state.value.defaultShortener = loaded.defaultShortener
+    state.value.copyToClipboard = loaded.copyToClipboard
+  }
+  globalSaved.value = JSON.stringify(globalDraft.value)
+}
+
+async function loadGlobalEditor() {
+  globalLoading.value = true
+  globalError.value = ''
+  try {
+    applyGlobalEditor(await LoadGlobalConfigurationEditor())
+  } catch (cause) {
+    globalError.value = errorMessage(cause)
+  } finally {
+    globalLoading.value = false
+  }
+}
+
+function applyUploaderEditor(loaded: UploaderEditorState) {
+	uploaderState.value = loaded
+	uploaderSaved.value = JSON.stringify(loaded.draft)
+	revealedSecrets.value = {}
+}
+
+async function loadUploaderEditor(name: string) {
+	uploaderLoading.value = true
+	uploaderError.value = ''
+	try {
+		applyUploaderEditor(await LoadUploaderEditor(name))
+	} catch (cause) {
+		uploaderError.value = errorMessage(cause)
+	} finally {
+		uploaderLoading.value = false
+	}
+}
+
+async function saveUploaderEditor() {
+	if (!uploaderState.value || !uploaderDirty.value) {
+		return true
+	}
+	uploaderLoading.value = true
+	uploaderError.value = ''
+	try {
+		applyUploaderEditor(await SaveUploaderEditor(uploaderState.value.draft))
+		return true
+	} catch (cause) {
+		uploaderError.value = errorMessage(cause)
+		return false
+	} finally {
+		uploaderLoading.value = false
+	}
+}
+
+async function renameUploader() {
+	if (!uploaderState.value?.draft.originalName) {
+		return
+	}
+	const newName = window.prompt('Rename Uploader', uploaderState.value.draft.originalName)
+	if (!newName || newName === uploaderState.value.draft.originalName) {
+		return
+	}
+	uploaderLoading.value = true
+	uploaderError.value = ''
+	try {
+		applyUploaderEditor(await RenameUploader({
+			revision: uploaderState.value.revision,
+			originalName: uploaderState.value.draft.originalName,
+			newName,
+		}))
+	} catch (cause) {
+		uploaderError.value = errorMessage(cause)
+	} finally {
+		uploaderLoading.value = false
+	}
+}
+
+async function deleteUploader() {
+	if (!uploaderState.value?.draft.originalName || !window.confirm(`Delete Uploader "${uploaderState.value.draft.originalName}"?`)) {
+		return
+	}
+	uploaderLoading.value = true
+	uploaderError.value = ''
+	try {
+		applyUploaderEditor(await DeleteUploader({
+			revision: uploaderState.value.revision,
+			name: uploaderState.value.draft.originalName,
+		}))
+	} catch (cause) {
+		uploaderError.value = errorMessage(cause)
+	} finally {
+		uploaderLoading.value = false
+	}
+}
+
+function applyShortenerEditor(loaded: ShortenerEditorState) {
+	shortenerState.value = loaded
+	shortenerSaved.value = JSON.stringify(loaded.draft)
+}
+
+async function loadShortenerEditor(name: string) {
+	shortenerLoading.value = true
+	shortenerError.value = ''
+	try {
+		applyShortenerEditor(await LoadShortenerEditor(name))
+	} catch (cause) {
+		shortenerError.value = errorMessage(cause)
+	} finally {
+		shortenerLoading.value = false
+	}
+}
+
+async function saveShortenerEditor() {
+	if (!shortenerState.value || !shortenerDirty.value) {
+		return true
+	}
+	shortenerLoading.value = true
+	shortenerError.value = ''
+	try {
+		applyShortenerEditor(await SaveShortenerEditor(shortenerState.value.draft))
+		return true
+	} catch (cause) {
+		shortenerError.value = errorMessage(cause)
+		return false
+	} finally {
+		shortenerLoading.value = false
+	}
+}
+
+function newShortener() {
+	if (anyDirty.value) {
+		pendingShortener.value = ''
+		dirtyAction.value = 'navigate'
+		return
+	}
+	void loadShortenerEditor('')
+}
+
+function selectShortener(name: string) {
+	if (shortenerState.value?.draft.originalName === name) {
+		return
+	}
+	if (anyDirty.value) {
+		pendingShortener.value = name
+		dirtyAction.value = 'navigate'
+		return
+	}
+	void loadShortenerEditor(name)
+}
+
+async function renameShortener() {
+	if (!shortenerState.value?.draft.originalName) {
+		return
+	}
+	const newName = window.prompt('Rename Shortener', shortenerState.value.draft.originalName)
+	if (!newName || newName === shortenerState.value.draft.originalName) {
+		return
+	}
+	shortenerLoading.value = true
+	shortenerError.value = ''
+	try {
+		applyShortenerEditor(await RenameShortener({
+			revision: shortenerState.value.revision,
+			originalName: shortenerState.value.draft.originalName,
+			newName,
+		}))
+	} catch (cause) {
+		shortenerError.value = errorMessage(cause)
+	} finally {
+		shortenerLoading.value = false
+	}
+}
+
+async function deleteShortener() {
+	if (!shortenerState.value?.draft.originalName || !window.confirm(`Delete Shortener "${shortenerState.value.draft.originalName}"?`)) {
+		return
+	}
+	shortenerLoading.value = true
+	shortenerError.value = ''
+	try {
+		applyShortenerEditor(await DeleteShortener({
+			revision: shortenerState.value.revision,
+			name: shortenerState.value.draft.originalName,
+		}))
+	} catch (cause) {
+		shortenerError.value = errorMessage(cause)
+	} finally {
+		shortenerLoading.value = false
+	}
+}
+function selectUploader(name: string) {
+	if (uploaderState.value?.draft.originalName === name) {
+		return
+	}
+	if (anyDirty.value) {
+		pendingUploader.value = name
+		dirtyAction.value = 'navigate'
+		return
+	}
+	void loadUploaderEditor(name)
+}
+
+function newUploader() {
+	if (anyDirty.value) {
+		pendingUploader.value = ''
+		dirtyAction.value = 'navigate'
+		return
+	}
+	void loadUploaderEditor('')
+}
+
+function addMapEntry(kind: 'headers' | 'query' | 'fields') {
+	if (!uploaderState.value) {
+		return
+	}
+	const entries = uploaderState.value.draft.request[kind] ?? []
+	entries.push({ key: '', value: '', sensitive: false })
+	uploaderState.value.draft.request[kind] = entries
+}
+
+function removeMapEntry(kind: 'headers' | 'query' | 'fields', index: number) {
+	if (!uploaderState.value) {
+		return
+	}
+	const entries = uploaderState.value.draft.request[kind] ?? []
+	entries.splice(index, 1)
+	uploaderState.value.draft.request[kind] = entries
+}
+
+function addShortenerMapEntry(kind: 'headers' | 'query') {
+	if (!shortenerState.value) return
+	const entries = shortenerState.value.draft.request[kind] ?? []
+	entries.push({ key: '', value: '', sensitive: false })
+	shortenerState.value.draft.request[kind] = entries
+}
+
+function removeShortenerMapEntry(kind: 'headers' | 'query', index: number) {
+	if (!shortenerState.value) return
+	const entries = shortenerState.value.draft.request[kind] ?? []
+	entries.splice(index, 1)
+	shortenerState.value.draft.request[kind] = entries
+}
+
+const shortenerMapKinds: Array<{ key: 'headers' | 'query'; label: string }> = [
+	{ key: 'headers', label: 'Headers' },
+	{ key: 'query', label: 'Query parameters' },
+]
+function secretKey(kind: string, index: number) {
+	return `${kind}-${index}`
+}
+
+function toggleSecret(kind: string, index: number) {
+	const key = secretKey(kind, index)
+	revealedSecrets.value[key] = !revealedSecrets.value[key]
+}
+
+const uploaderMapKinds: Array<{ key: 'headers' | 'query' | 'fields'; label: string }> = [
+	{ key: 'headers', label: 'Headers' },
+	{ key: 'query', label: 'Query parameters' },
+	{ key: 'fields', label: 'Form fields' },
+]
+
+function addSetupField() {
+	setupUploader.request.fields.push({ key: '', value: '', sensitive: false })
+}
+
+function removeSetupField(index: number) {
+	setupUploader.request.fields.splice(index, 1)
+}
+
+function toggleErrorExtractor(enabled: boolean) {
+	if (!uploaderState.value) {
+		return
+	}
+	if (enabled && !uploaderState.value.draft.response.error) {
+		uploaderState.value.draft.response.error = { type: 'body', path: '', header: '', pattern: '', group: '' }
+	} else if (!enabled) {
+		uploaderState.value.draft.response.error = null
+	}
+}
+
+function toggleShortenerError(enabled: boolean) {
+	if (!shortenerState.value) return
+	if (enabled && !shortenerState.value.draft.response.error) {
+		shortenerState.value.draft.response.error = { type: 'json', path: '', header: '', pattern: '', group: '' }
+	} else if (!enabled) {
+		shortenerState.value.draft.response.error = null
+	}
+}
+
+function onShortenerErrorToggle(event: Event) {
+	toggleShortenerError(event.target instanceof HTMLInputElement && event.target.checked)
+}
+
+function onErrorToggle(event: Event) {
+	toggleErrorExtractor(event.target instanceof HTMLInputElement && event.target.checked)
+}
+
+function changeUploaderBody(event: Event) {
+	if (!uploaderState.value) {
+		return
+	}
+	const body = (event.target as HTMLSelectElement).value as 'multipart' | 'binary' | 'form' | 'json'
+	uploaderState.value.draft.request.body = body
+	if (body === 'binary') {
+		uploaderState.value.draft.request.fileField = ''
+		uploaderState.value.draft.request.fields = []
+		uploaderState.value.draft.request.dataJSON = ''
+	} else if (body === 'form') {
+		uploaderState.value.draft.request.fileField = ''
+		uploaderState.value.draft.request.dataJSON = ''
+	} else if (body === 'json') {
+		uploaderState.value.draft.request.fileField = ''
+		uploaderState.value.draft.request.fields = []
+	} else {
+		uploaderState.value.draft.request.dataJSON = ''
+	}
+}
+
+async function saveGlobalEditor() {
+  if (!globalDirty.value) {
+    return true
+  }
+  globalLoading.value = true
+  globalError.value = ''
+  globalNotice.value = ''
+  try {
+    applyGlobalEditor(await SaveGlobalConfiguration(globalDraft.value))
+    globalNotice.value = 'Global Configuration saved.'
+    return true
+  } catch (cause) {
+    globalError.value = errorMessage(cause)
+    return false
+  } finally {
+    globalLoading.value = false
+  }
+}
+
+async function finishSetup() {
+	setupLoading.value = true
+	setupError.value = ''
+	try {
+		const created = await CreateInitialConfigurationSet(setupGlobal, setupUploader)
+		state.value = created
+		await loadGlobalEditor()
+		await loadUploaderEditor(created.defaultUploader)
+		await loadShortenerEditor('')
+		activeArea.value = 'manual-upload'
+	} catch (cause) {
+		setupError.value = errorMessage(cause)
+	} finally {
+		setupLoading.value = false
+	}
+}
+
+async function loadRepairDocument() {
+	repairLoading.value = true
+	repairError.value = ''
+	try {
+		repairState.value = await LoadRepairDocument(repairKind.value)
+	} catch (cause) {
+		repairError.value = errorMessage(cause)
+	} finally {
+		repairLoading.value = false
+	}
+}
+
+async function unlockRepair() {
+	repairLocked.value = false
+	await loadRepairDocument()
+}
+
+async function saveRepairDocument() {
+	if (!repairState.value) return
+	repairLoading.value = true
+	repairError.value = ''
+	try {
+		const startup = await SaveRepairDocument({ kind: repairKind.value, revision: repairState.value.revision, content: repairState.value.content })
+		state.value = startup
+		repairLocked.value = true
+		repairState.value = null
+	} catch (cause) {
+		repairError.value = errorMessage(cause)
+	} finally {
+		repairLoading.value = false
+	}
+}
+function requestArea(area: Area) {
+  if (area === activeArea.value) {
+    return
+  }
+  if (anyDirty.value) {
+    pendingArea.value = area
+    dirtyAction.value = 'navigate'
+    return
+  }
+  activeArea.value = area
+  if (area === 'uploaders' && !uploaderState.value) {
+    void loadUploaderEditor(state.value?.defaultUploader ?? '')
+  }
+  if (area === 'shorteners' && !shortenerState.value) {
+    void loadShortenerEditor(state.value?.defaultShortener ?? '')
+  }
+}
+
+function requestRefresh() {
+  if (anyDirty.value) {
+    dirtyAction.value = 'refresh'
+    return
+  }
+  if (activeArea.value === 'uploaders') {
+    void loadUploaderEditor(uploaderState.value?.draft.originalName ?? '')
+    return
+  }
+  if (activeArea.value === 'shorteners') {
+    void loadShortenerEditor(shortenerState.value?.draft.originalName ?? '')
+    return
+  }
+  void loadGlobalEditor()
+}
+
+async function resolveDirtyAction(action: 'save' | 'discard' | 'cancel') {
+  if (action === 'cancel') {
+    dirtyAction.value = null
+    pendingArea.value = null
+    pendingUploader.value = null
+    pendingShortener.value = null
+    return
+  }
+  const savingUploader = activeArea.value === 'uploaders' && uploaderDirty.value
+  const savingShortener = activeArea.value === 'shorteners' && shortenerDirty.value
+  if (action === 'save' && !(savingUploader ? await saveUploaderEditor() : savingShortener ? await saveShortenerEditor() : await saveGlobalEditor())) {
+    return
+  }
+  if (action === 'discard') {
+    if (savingUploader) {
+      await loadUploaderEditor(uploaderState.value?.draft.originalName ?? '')
+    } else if (savingShortener) {
+      await loadShortenerEditor(shortenerState.value?.draft.originalName ?? '')
+    } else {
+      await loadGlobalEditor()
+    }
+  }
+  const nextArea = pendingArea.value
+  const nextUploader = pendingUploader.value
+  const nextShortener = pendingShortener.value
+  const nextAction = dirtyAction.value
+  dirtyAction.value = null
+  pendingArea.value = null
+  pendingUploader.value = null
+  pendingShortener.value = null
+  if (nextAction === 'navigate' && nextArea) {
+    activeArea.value = nextArea
+  }
+  if (nextAction === 'navigate' && nextUploader !== null) {
+    await loadUploaderEditor(nextUploader)
+  }
+  if (nextAction === 'navigate' && nextShortener !== null) {
+    await loadShortenerEditor(nextShortener)
+  }
+}
+
+async function resolveClose(action: 'save' | 'discard' | 'cancel') {
+	if (action === 'cancel') {
+		closeRequested.value = false
+		return
+	}
+	const savingUploader = activeArea.value === 'uploaders' && uploaderDirty.value
+	const savingShortener = activeArea.value === 'shorteners' && shortenerDirty.value
+	if (action === 'save' && !(savingUploader ? await saveUploaderEditor() : savingShortener ? await saveShortenerEditor() : await saveGlobalEditor())) {
+		return
+	}
+	if (action === 'discard') {
+		if (savingUploader) {
+			await loadUploaderEditor(uploaderState.value?.draft.originalName ?? '')
+			if (uploaderError.value) return
+		} else if (savingShortener) {
+			await loadShortenerEditor(shortenerState.value?.draft.originalName ?? '')
+			if (shortenerError.value) return
+		} else {
+			await loadGlobalEditor()
+			if (globalError.value) return
+		}
+	}
+	closeRequested.value = false
+	await SetGlobalConfigurationDirty(false)
+	await ConfirmClose()
+}
+
+const handleFocus = () => {
+	if (state.value?.mode !== 'normal' || anyDirty.value) return
+	if (activeArea.value === 'uploaders') {
+		void loadUploaderEditor(uploaderState.value?.draft.originalName ?? '')
+		return
+	}
+	if (activeArea.value === 'shorteners') {
+		void loadShortenerEditor(shortenerState.value?.draft.originalName ?? '')
+		return
+	}
+	void loadGlobalEditor()
+}
+
+onMounted(async () => {
+	try {
+		const loaded = await StartupState()
+		if (!loaded || typeof loaded.mode !== 'string') throw new Error('Desktop startup state was not returned')
+		state.value = loaded
+		if (loaded.mode === 'normal') {
+			await loadGlobalEditor()
+			await loadUploaderEditor(loaded.defaultUploader)
+			await loadShortenerEditor(loaded.defaultShortener)
+		}
+	} catch (cause) {
+		error.value = errorMessage(cause)
+	} finally {
+		loading.value = false
+	}
+	window.addEventListener('focus', handleFocus)
+	stopCloseRequested = Events.On('desktop:close-requested', () => { closeRequested.value = true })
+	void SetGlobalConfigurationDirty(false)
+})
+
+onUnmounted(() => {
+	window.removeEventListener('focus', handleFocus)
+	stopCloseRequested?.()
+})
+</script>
+
+<template>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">U</div>
+        <div>
+          <p class="eyebrow">Upit</p>
+          <h1>Desktop</h1>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <button
+          v-for="area in areas"
+          :key="area.id"
+          class="nav-item"
+          :class="{ active: activeArea === area.id }"
+          :aria-current="activeArea === area.id ? 'page' : undefined"
+          type="button"
+          @click="requestArea(area.id)"
+        >
+          <span class="nav-label">{{ area.label }}</span>
+          <span class="nav-description">{{ area.description }}</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="status-dot" :class="state?.mode ?? 'loading'" aria-hidden="true"></span>
+        <span v-if="loading">Loading Configuration Set…</span>
+        <span v-else-if="error">Desktop unavailable</span>
+        <span v-else-if="state?.mode === 'normal'">Configuration Set ready</span>
+        <span v-else-if="state?.mode === 'setup'">Setup required</span>
+        <span v-else>Repair required</span>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Configuration Set</p>
+          <h2>{{ activeAreaDetails.label }}</h2>
+        </div>
+        <span v-if="state?.configurationPath" class="path-chip">{{ state.configurationPath }}</span>
+      </header>
+
+      <section v-if="loading" class="state-card" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <h3>Loading your Configuration Set</h3>
+        <p>Upit is reading and validating the fixed user configuration location.</p>
+      </section>
+
+      <section v-else-if="error" class="state-card state-card-error" role="alert">
+        <span class="state-icon" aria-hidden="true">!</span>
+        <h3>Desktop could not load</h3>
+        <p>{{ error }}</p>
+      </section>
+
+      <section v-else-if="state?.mode === 'setup'" class="state-card setup-card">
+        <span class="state-icon state-icon-accent" aria-hidden="true">+</span>
+        <p class="eyebrow">First run</p>
+        <h3>Create your Configuration Set</h3>
+        <p>Finish creates the fixed configuration directory and one valid Uploader. Nothing is written while this draft is incomplete.</p>
+        <form class="editor-form" @submit.prevent="finishSetup">
+          <label class="field-label" for="setup-default-uploader">Default Uploader name</label>
+          <input id="setup-default-uploader" v-model="setupGlobal.defaultUploader" placeholder="Name" />
+          <label class="field-label" for="setup-default-shortener">Default Shortener (optional)</label>
+          <input id="setup-default-shortener" v-model="setupGlobal.defaultShortener" placeholder="Leave empty until a Shortener is configured" />
+          <label class="checkbox-field">
+            <input v-model="setupGlobal.copyToClipboard" type="checkbox" />
+            <span>Copy Final URL to the clipboard after successful uploads</span>
+          </label>
+          <label class="field-label" for="setup-uploader-name">First Uploader name</label>
+          <input id="setup-uploader-name" v-model="setupUploader.name" placeholder="Name" />
+          <label class="field-label" for="setup-method">HTTP method</label>
+          <input id="setup-method" v-model="setupUploader.request.method" placeholder="POST" />
+          <label class="field-label" for="setup-url">Request URL</label>
+          <input id="setup-url" v-model="setupUploader.request.url" placeholder="https://upload.example.test" />
+          <label class="field-label" for="setup-body">Request Body Mode</label>
+          <select id="setup-body" v-model="setupUploader.request.body">
+            <option value="" disabled>Select a mode</option>
+            <option value="multipart">multipart</option>
+            <option value="binary">binary</option>
+            <option value="form">form</option>
+            <option value="json">json</option>
+          </select>
+          <label v-if="setupUploader.request.body === 'multipart'" class="field-label" for="setup-file-field">File field</label>
+          <input v-if="setupUploader.request.body === 'multipart'" id="setup-file-field" v-model="setupUploader.request.fileField" placeholder="file" />
+          <section v-if="setupUploader.request.body === 'multipart' || setupUploader.request.body === 'form'" class="map-editor">
+            <div class="map-heading"><h4>Request fields</h4><button class="secondary-action" type="button" @click="addSetupField">Add</button></div>
+            <div v-for="(entry, index) in setupUploader.request.fields" :key="`setup-field-${index}`" class="map-row">
+              <input v-model="entry.key" placeholder="Field name" />
+              <input v-model="entry.value" placeholder="Value or {input}" />
+              <button class="icon-action" type="button" @click="removeSetupField(index)">Remove</button>
+            </div>
+          </section>
+          <p v-if="setupUploader.request.body === 'json'" class="muted-copy">JSON data must contain exactly one full-string {input} placeholder.</p>
+          <select id="setup-response-type" v-model="setupUploader.response.url.type">
+            <option value="" disabled>Select an extractor</option>
+            <option value="body">body</option>
+            <option value="json">json</option>
+            <option value="header">header</option>
+            <option value="regex">regex</option>
+          </select>
+          <input v-if="setupUploader.response.url.type === 'json'" v-model="setupUploader.response.url.path" placeholder="JSONPath" />
+          <input v-if="setupUploader.response.url.type === 'header'" v-model="setupUploader.response.url.header" placeholder="Response header" />
+          <input v-if="setupUploader.response.url.type === 'regex'" v-model="setupUploader.response.url.pattern" placeholder="RE2 pattern" />
+          <input v-if="setupUploader.response.url.type === 'regex'" v-model="setupUploader.response.url.group" placeholder="Group (optional)" />
+          <textarea v-if="setupUploader.request.body === 'json'" v-model="setupUploader.request.dataJSON" rows="6" placeholder='{"content":"{input}"}'></textarea>
+          <p v-if="setupError" class="inline-error" role="alert">{{ setupError }}</p>
+          <button class="primary-action" type="submit" :disabled="!setupReady || setupLoading">Finish Setup</button>
+        </form>
+      </section>
+
+      <section v-else-if="state?.mode === 'repair'" class="state-card state-card-warning repair-card" role="alert">
+        <span class="state-icon" aria-hidden="true">!</span>
+        <p class="eyebrow">Repair required</p>
+        <h3>Your Configuration Set needs attention</h3>
+        <p>{{ state.diagnostic }}</p>
+        <label class="field-label" for="repair-kind">Document to repair</label>
+        <select id="repair-kind" v-model="repairKind" :disabled="repairLoading" @change="repairLocked = true; repairState = null">
+          <option value="config">Global Configuration</option>
+          <option value="uploaders">Uploaders</option>
+          <option value="shorteners">Shorteners</option>
+        </select>
+        <p v-if="repairLocked" class="muted-copy">The raw document is locked until you explicitly unlock it. It may contain credentials.</p>
+        <button v-if="repairLocked" class="primary-action" type="button" :disabled="repairLoading" @click="unlockRepair">Unlock repair document</button>
+        <template v-else>
+          <textarea v-if="repairState" v-model="repairState.content" class="repair-textarea" rows="14" spellcheck="false" :disabled="repairLoading"></textarea>
+          <p v-if="repairError" class="inline-error" role="alert">{{ repairError }}</p>
+          <div class="editor-actions">
+            <button class="primary-action" type="button" :disabled="repairLoading || !repairState" @click="saveRepairDocument">Validate and Save</button>
+            <button class="secondary-action" type="button" :disabled="repairLoading" @click="loadRepairDocument">Reload</button>
+          </div>
+        </template>
+      </section>
+
+      <section v-else class="workspace">
+        <div class="summary-grid">
+          <article class="summary-card">
+            <span class="summary-label">Default Uploader</span>
+            <strong>{{ state?.defaultUploader }}</strong>
+          </article>
+          <article class="summary-card">
+            <span class="summary-label">Default Shortener</span>
+            <strong>{{ state?.defaultShortener || 'None' }}</strong>
+          </article>
+          <article class="summary-card">
+            <span class="summary-label">Clipboard</span>
+            <strong>{{ state?.copyToClipboard ? 'Enabled' : 'Disabled' }}</strong>
+          </article>
+        </div>
+
+        <article v-if="activeArea === 'global-configuration'" class="content-card editor-card">
+          <div class="content-card-heading">
+            <div>
+              <p class="eyebrow">Explicit Save</p>
+              <h3>Global Configuration</h3>
+            </div>
+            <span v-if="globalDirty" class="dirty-badge">Unsaved changes</span>
+            <span v-else class="ready-badge">Saved</span>
+          </div>
+          <p>Choose the defaults used by later uploads. Changes stay in memory until you save them.</p>
+          <form class="editor-form" @submit.prevent="saveGlobalEditor">
+            <label class="field-label" for="default-uploader">Default Uploader</label>
+            <select id="default-uploader" v-model="globalEditor.defaultUploader" :disabled="globalLoading">
+              <option v-for="name in globalEditor.uploaders" :key="name" :value="name">{{ name }}</option>
+            </select>
+
+            <label class="field-label" for="default-shortener">Default Shortener</label>
+            <select id="default-shortener" v-model="globalEditor.defaultShortener" :disabled="globalLoading">
+              <option value="">None</option>
+              <option v-for="name in globalEditor.shorteners" :key="name" :value="name">{{ name }}</option>
+            </select>
+
+            <label class="checkbox-field">
+              <input v-model="globalEditor.copyToClipboard" type="checkbox" :disabled="globalLoading" />
+              <span>Copy Final URL to the clipboard after successful uploads</span>
+            </label>
+
+            <p v-if="globalError" class="inline-error" role="alert">{{ globalError }}</p>
+            <p v-if="globalNotice" class="inline-success" role="status">{{ globalNotice }}</p>
+            <div class="editor-actions">
+              <button class="primary-action" type="submit" :disabled="!globalDirty || globalLoading">Save</button>
+              <button class="secondary-action" type="button" :disabled="globalLoading" @click="requestRefresh">Refresh</button>
+              <button v-if="globalDirty" class="secondary-action" type="button" :disabled="globalLoading" @click="resolveDirtyAction('discard')">Discard</button>
+            </div>
+          </form>
+        </article>
+
+        <article v-else-if="activeArea === 'uploaders'" class="content-card uploader-editor-card">
+          <div class="content-card-heading">
+            <div>
+              <p class="eyebrow">Structured editor</p>
+              <h3>Uploaders</h3>
+            </div>
+            <span v-if="uploaderDirty" class="dirty-badge">Unsaved changes</span>
+            <span v-else class="ready-badge">Saved</span>
+          </div>
+          <div class="uploader-layout">
+            <aside class="uploader-list" aria-label="Uploader definitions">
+              <button
+                v-for="name in uploaderState?.uploaders ?? []"
+                :key="name"
+                class="definition-button"
+                :class="{ active: uploaderState?.draft.originalName === name }"
+                type="button"
+                @click="selectUploader(name)"
+              >
+                <span>{{ name }}</span>
+                <small v-if="name === state?.defaultUploader">Default</small>
+              </button>
+              <button class="secondary-action" type="button" :disabled="uploaderLoading" @click="newUploader">New Uploader</button>
+            </aside>
+
+            <form v-if="uploaderState" class="editor-form uploader-form" @submit.prevent="saveUploaderEditor">
+              <label class="field-label" for="uploader-name">Name</label>
+              <input id="uploader-name" v-model="uploaderState.draft.name" :disabled="Boolean(uploaderState.draft.originalName) || uploaderLoading" />
+
+              <label class="field-label" for="uploader-method">HTTP method</label>
+              <input id="uploader-method" v-model="uploaderState.draft.request.method" :disabled="uploaderLoading" />
+
+              <label class="field-label" for="uploader-url">Request URL</label>
+              <input id="uploader-url" v-model="uploaderState.draft.request.url" :disabled="uploaderLoading" />
+
+              <label class="field-label" for="uploader-body">Request Body Mode</label>
+              <select id="uploader-body" :value="uploaderState.draft.request.body" :disabled="uploaderLoading" @change="changeUploaderBody">
+                <option value="multipart">multipart</option>
+                <option value="binary">binary</option>
+                <option value="form">form</option>
+                <option value="json">json</option>
+              </select>
+
+              <template v-if="uploaderState.draft.request.body === 'multipart'">
+                <label class="field-label" for="uploader-file-field">File field</label>
+                <input id="uploader-file-field" v-model="uploaderState.draft.request.fileField" :disabled="uploaderLoading" />
+              </template>
+
+              <section v-for="map in uploaderMapKinds" v-show="map.key !== 'fields' || uploaderState.draft.request.body === 'multipart' || uploaderState.draft.request.body === 'form'" :key="map.key" class="map-editor">
+                <div class="map-heading">
+                  <h4>{{ map.label }}</h4>
+                  <button class="secondary-action" type="button" @click="addMapEntry(map.key)">Add</button>
+                </div>
+                <div v-for="(entry, index) in uploaderState.draft.request[map.key] ?? []" :key="`${map.key}-${index}`" class="map-row">
+                  <input v-model="entry.key" :aria-label="`${map.label} key ${index + 1}`" placeholder="Key" :disabled="uploaderLoading" />
+                  <input
+                    v-model="entry.value"
+                    :type="entry.sensitive && !revealedSecrets[secretKey(map.key, index)] ? 'password' : 'text'"
+                    :aria-label="`${map.label} value ${index + 1}`"
+                    placeholder="Value"
+                    :disabled="uploaderLoading"
+                  />
+                  <button v-if="entry.sensitive" class="icon-action" type="button" @click="toggleSecret(map.key, index)">{{ revealedSecrets[secretKey(map.key, index)] ? 'Mask' : 'Reveal' }}</button>
+                  <button class="icon-action" type="button" @click="removeMapEntry(map.key, index)">Remove</button>
+                </div>
+              </section>
+
+              <section v-if="uploaderState.draft.request.body === 'json'" class="map-editor">
+                <label class="field-label" for="uploader-data">JSON request data</label>
+                <textarea id="uploader-data" v-model="uploaderState.draft.request.dataJSON" rows="8" spellcheck="false" :disabled="uploaderLoading"></textarea>
+              </section>
+
+              <section class="map-editor">
+                <h4>Response URL extractor</h4>
+                <select v-model="uploaderState.draft.response.url.type" :disabled="uploaderLoading">
+                  <option value="json">json</option>
+                  <option value="header">header</option>
+                  <option value="regex">regex</option>
+                  <option value="body">body</option>
+                </select>
+                <input v-if="uploaderState.draft.response.url.type === 'json'" v-model="uploaderState.draft.response.url.path" placeholder="JSONPath" :disabled="uploaderLoading" />
+                <input v-if="uploaderState.draft.response.url.type === 'header'" v-model="uploaderState.draft.response.url.header" placeholder="Response header" :disabled="uploaderLoading" />
+                <input v-if="uploaderState.draft.response.url.type === 'regex'" v-model="uploaderState.draft.response.url.pattern" placeholder="RE2 pattern" :disabled="uploaderLoading" />
+                <input v-if="uploaderState.draft.response.url.type === 'regex'" v-model="uploaderState.draft.response.url.group" placeholder="Group (optional)" :disabled="uploaderLoading" />
+              </section>
+
+              <section class="map-editor">
+                <label class="checkbox-field">
+                  <input type="checkbox" :checked="Boolean(uploaderState.draft.response.error)" :disabled="uploaderLoading" @change="onErrorToggle" />
+                  <span>Configure response error extractor</span>
+                </label>
+                <template v-if="uploaderState.draft.response.error">
+                  <select v-model="uploaderState.draft.response.error.type" :disabled="uploaderLoading">
+                    <option value="json">json</option>
+                    <option value="header">header</option>
+                    <option value="regex">regex</option>
+                    <option value="body">body</option>
+                  </select>
+                  <input v-if="uploaderState.draft.response.error.type === 'json'" v-model="uploaderState.draft.response.error.path" placeholder="JSONPath" :disabled="uploaderLoading" />
+                  <input v-if="uploaderState.draft.response.error.type === 'header'" v-model="uploaderState.draft.response.error.header" placeholder="Response header" :disabled="uploaderLoading" />
+                  <input v-if="uploaderState.draft.response.error.type === 'regex'" v-model="uploaderState.draft.response.error.pattern" placeholder="RE2 pattern" :disabled="uploaderLoading" />
+                  <input v-if="uploaderState.draft.response.error.type === 'regex'" v-model="uploaderState.draft.response.error.group" placeholder="Group (optional)" :disabled="uploaderLoading" />
+                </template>
+              </section>
+
+              <p v-if="uploaderError" class="inline-error" role="alert">{{ uploaderError }}</p>
+              <div class="editor-actions">
+                <button class="primary-action" type="submit" :disabled="!uploaderDirty || uploaderLoading">Save Uploader</button>
+                <button class="secondary-action" type="button" :disabled="uploaderLoading" @click="requestRefresh">Refresh</button>
+                <button class="secondary-action" type="button" :disabled="uploaderLoading || uploaderDirty || !uploaderState.draft.originalName" @click="renameUploader">Rename</button>
+                <button class="secondary-action" type="button" :disabled="uploaderLoading || uploaderDirty || !uploaderState.draft.originalName" @click="deleteUploader">Delete</button>
+              </div>
+            </form>
+          </div>
+        </article>
+        <article v-else-if="activeArea === 'shorteners'" class="content-card uploader-editor-card">
+          <div class="content-card-heading">
+            <div>
+              <p class="eyebrow">Structured editor</p>
+              <h3>Shorteners</h3>
+            </div>
+            <span v-if="shortenerDirty" class="dirty-badge">Unsaved changes</span>
+            <span v-else class="ready-badge">Saved</span>
+          </div>
+          <div class="uploader-layout">
+            <aside class="uploader-list" aria-label="Shortener definitions">
+              <button
+                v-for="name in shortenerState?.shorteners ?? []"
+                :key="name"
+                class="definition-button"
+                :class="{ active: shortenerState?.draft.originalName === name }"
+                type="button"
+                @click="selectShortener(name)"
+              >
+                <span>{{ name }}</span>
+                <small v-if="name === state?.defaultShortener">Default</small>
+              </button>
+              <button class="secondary-action" type="button" :disabled="shortenerLoading" @click="newShortener">New Shortener</button>
+            </aside>
+
+            <form v-if="shortenerState" class="editor-form uploader-form" @submit.prevent="saveShortenerEditor">
+              <label class="field-label" for="shortener-name">Name</label>
+              <input id="shortener-name" v-model="shortenerState.draft.name" :disabled="Boolean(shortenerState.draft.originalName) || shortenerLoading" />
+              <label class="field-label" for="shortener-method">HTTP method</label>
+              <input id="shortener-method" v-model="shortenerState.draft.request.method" :disabled="shortenerLoading" />
+              <label class="field-label" for="shortener-url">Request URL</label>
+              <input id="shortener-url" v-model="shortenerState.draft.request.url" :disabled="shortenerLoading" />
+
+              <section v-for="map in shortenerMapKinds" :key="map.key" class="map-editor">
+                <div class="map-heading">
+                  <h4>{{ map.label }}</h4>
+                  <button class="secondary-action" type="button" @click="addShortenerMapEntry(map.key)">Add</button>
+                </div>
+                <div v-for="(entry, index) in shortenerState.draft.request[map.key] ?? []" :key="`${map.key}-${index}`" class="map-row">
+                  <input v-model="entry.key" :aria-label="`${map.label} key ${index + 1}`" placeholder="Key" :disabled="shortenerLoading" />
+                  <input v-model="entry.value" :type="entry.sensitive && !revealedSecrets[secretKey(`shortener-${map.key}`, index)] ? 'password' : 'text'" :aria-label="`${map.label} value ${index + 1}`" placeholder="Value" :disabled="shortenerLoading" />
+                  <button v-if="entry.sensitive" class="icon-action" type="button" @click="toggleSecret(`shortener-${map.key}`, index)">{{ revealedSecrets[secretKey(`shortener-${map.key}`, index)] ? 'Mask' : 'Reveal' }}</button>
+                  <button class="icon-action" type="button" @click="removeShortenerMapEntry(map.key, index)">Remove</button>
+                </div>
+              </section>
+
+              <label class="field-label" for="shortener-data">JSON request data</label>
+              <textarea id="shortener-data" v-model="shortenerState.draft.request.dataJSON" rows="8" spellcheck="false" :disabled="shortenerLoading"></textarea>
+              <section class="map-editor">
+                <h4>Response URL extractor (JSON only)</h4>
+                <input v-model="shortenerState.draft.response.url.path" placeholder="JSONPath" :disabled="shortenerLoading" />
+                <label class="checkbox-field">
+                  <input type="checkbox" :checked="Boolean(shortenerState.draft.response.error)" :disabled="shortenerLoading" @change="onShortenerErrorToggle" />
+                  <span>Configure provider error extractor</span>
+                </label>
+                <input v-if="shortenerState.draft.response.error" v-model="shortenerState.draft.response.error.path" placeholder="Error JSONPath" :disabled="shortenerLoading" />
+              </section>
+
+              <p v-if="shortenerError" class="inline-error" role="alert">{{ shortenerError }}</p>
+              <div class="editor-actions">
+                <button class="primary-action" type="submit" :disabled="!shortenerDirty || shortenerLoading">Save Shortener</button>
+                <button class="secondary-action" type="button" :disabled="shortenerLoading" @click="requestRefresh">Refresh</button>
+                <button class="secondary-action" type="button" :disabled="shortenerLoading || shortenerDirty || !shortenerState.draft.originalName" @click="renameShortener">Rename</button>
+                <button class="secondary-action" type="button" :disabled="shortenerLoading || shortenerDirty || !shortenerState.draft.originalName" @click="deleteShortener">Delete</button>
+              </div>
+            </form>
+          </div>
+        </article>
+        <article v-else class="content-card">
+          <div class="content-card-heading">
+            <div>
+              <p class="eyebrow">Read-only overview</p>
+              <h3>{{ activeAreaDetails.label }}</h3>
+            </div>
+            <span class="ready-badge">Ready</span>
+          </div>
+          <p>{{ activeAreaDetails.description }}</p>
+          <p v-if="activeArea === 'manual-upload'" class="muted-copy">Manual Upload controls will be enabled in the next desktop slice.</p>
+          <div v-else class="definition-list">
+            <span v-for="name in state?.shorteners" :key="name">{{ name }}</span>
+            <span v-if="activeArea === 'shorteners' && !state?.shortenersPresent" class="muted-copy">No Shorteners configured.</span>
+          </div>
+        </article>
+      </section>
+      <div v-if="dirtyAction" class="modal-backdrop" role="presentation">
+        <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="dirty-dialog-title">
+          <p class="eyebrow">Unsaved changes</p>
+          <h3 id="dirty-dialog-title">Save {{ dirtyEditorLabel }} changes?</h3>
+          <p>Your current edits are not saved. Save them before {{ dirtyAction === 'navigate' ? 'leaving this area' : 'refreshing' }}?</p>
+          <div class="editor-actions">
+            <button class="primary-action" type="button" @click="resolveDirtyAction('save')">Save</button>
+            <button class="secondary-action" type="button" @click="resolveDirtyAction('discard')">Discard</button>
+            <button class="secondary-action" type="button" @click="resolveDirtyAction('cancel')">Cancel</button>
+          </div>
+        </section>
+      </div>
+      <div v-if="closeRequested" class="modal-backdrop" role="presentation">
+        <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="close-dialog-title">
+          <p class="eyebrow">Close Upit Desktop</p>
+          <h3 id="close-dialog-title">Save {{ dirtyEditorLabel }} changes?</h3>
+          <p>Your current edits are not saved. Choose Save, Discard, or Cancel before closing.</p>
+          <div class="editor-actions">
+            <button class="primary-action" type="button" @click="resolveClose('save')">Save</button>
+            <button class="secondary-action" type="button" @click="resolveClose('discard')">Discard</button>
+            <button class="secondary-action" type="button" @click="resolveClose('cancel')">Cancel</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</template>
