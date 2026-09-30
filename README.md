@@ -21,7 +21,7 @@ Upit is a headless-first, cross-platform file uploader. It streams one file to a
 
 ## Requirements
 
-- Go 1.23 or newer to build from source
+- Go 1.25 or newer to build from source
 - Clipboard command only when clipboard copying is enabled:
     - macOS: `pbcopy`
     - Windows: `clip`

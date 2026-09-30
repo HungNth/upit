@@ -35,3 +35,7 @@ _Avoid_: Source URL, Long URL
 **Final URL**:
 The URL emitted as the result of a successful upload after optional post-processing. It is identical to the Original URL when no post-processing changes it.
 _Avoid_: Result URL, Output URL
+
+**Manual Upload**:
+An interactive upload initiated by a user for exactly one local file selected through file browsing or drag-and-drop. It may override the Uploader, Shortener, clipboard behavior, and timeout for that upload, and exposes progress, cancellation, warnings, and the resulting Original URL and Final URL.
+_Avoid_: Manual upload UI, GUI upload, Desktop upload

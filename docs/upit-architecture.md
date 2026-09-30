@@ -187,49 +187,46 @@ Go is responsible for:
 - CLI
 - Headless/server operation
 
-### Desktop GUI (future/deferred; not v0.3)
+### Desktop GUI (v0.5 planned)
 
 ```text
-Future framework: Wails 3
+Framework: Wails v3.0.0-beta.26
+Frontend: Vue 3 + TypeScript + Vite + shadcn-vue
 ```
 
-Wails must only be used by the desktop frontend.
-
-The core packages and CLI must not import Wails packages.
+Wails is confined to the desktop executable and thin frontend adapters. The application modules and CLI do not import Wails packages.
 
 ---
 
-## 6. Wails Version Policy (deferred; not v0.3)
+## 6. Wails Version Policy (v0.5 planned)
 
-Desktop delivery is deferred beyond v0.3, so no Wails version is currently selected.
+Upit v0.5 pins Wails `v3.0.0-beta.26`. Its API is documented as stable, but the release remains beta; stable Wails 3 is not a prerequisite for v0.5.
 
-When desktop work enters scope, pin one exact Wails version after checking the then-current supported v3 release. Core packages and the CLI must remain independent of Wails.
-
-Upgrade process:
+Every Wails upgrade is explicit:
 
 ```text
-New Wails release
+Proposed Wails release
  ↓
-Review changelog
+Review changelog and breaking changes
  ↓
-Update pinned version
+Update the exact pinned version
  ↓
-Run tests
+Run application and frontend checks
  ↓
-Build desktop targets
+Build and smoke native desktop targets
  ↓
-Commit version change
+Commit the reviewed upgrade
 ```
 
-When Wails 3 reaches stable `v3.0.0`, Upit can migrate deliberately after testing.
+Application modules and the CLI remain independent of Wails so a framework upgrade cannot change headless behavior implicitly.
 
 ---
 
-## 7. Binary Strategy (historical desktop roadmap; v0.3 CLI only)
+## 7. Binary Strategy (v0.5 planned)
 
-v0.3 ships the `upit` CLI binary only. A separate desktop binary is deferred to a future release.
+Upit v0.5 keeps the existing `upit` CLI and adds a separately launched `upit-desktop` executable.
 
-Recommended names:
+Executable names:
 
 ```text
 upit
@@ -256,9 +253,9 @@ Example:
 upit upload file.zip
 ```
 
-### `upit-desktop` (future/deferred; not v0.3)
+### `upit-desktop` (v0.5 planned)
 
-The future optional Wails desktop application (not part of v0.3).
+The optional Wails desktop application.
 
 Properties:
 
@@ -1504,15 +1501,14 @@ https://files.example.com/file.zip
 - Draft 2020-12 schemas for Global Configuration, Uploader, and Shortener documents
 - Uploader and Shortener documents remain manually managed; no migration, editor, or provider adapter was added
 
-### v0.5 — Wails 3 Desktop
+### v0.5 — Wails 3 Desktop (planned)
 
-- Settings UI
-- Uploader editor
-- URL-shortener editor
-- Config validation
-- Manual upload UI
-- No system tray
-- Exit completely when closed
+- Keep the headless `upit` CLI and add a separate `upit-desktop` executable built with pinned Wails 3, Vue, TypeScript, Vite, and shadcn-vue.
+- Provide Manual Upload for exactly one file selected by picker or drag-and-drop, with CLI-parity overrides, progress, cancellation, structured failures, manual retry, and Final URL results.
+- Manage the three existing Global Configuration fields and the complete lifecycle of Uploaders and Shorteners through structured editors, strict validation, explicit valid-only saves, first-run setup, and raw repair for invalid documents.
+- Reject stale saves and block rename or deletion of referenced definitions instead of adding lock files, automatic merge, or cross-document transaction journals.
+- Run one desktop instance, never use a system tray or resident worker, and exit completely after resolving active uploads and unsaved edits when the window closes.
+- Build native runnable desktop artifacts for Windows, macOS, and modern GTK4/WebKitGTK 6.0 Linux; defer installers, signing, auto-update, and operating-system integration to v1.0.
 
 ### v1.0 — Distribution and OS Integration
 
