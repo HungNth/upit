@@ -118,7 +118,7 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "github.com/HungNth/upit/desktop",
+			UniqueID: "com.hungnth.upit.desktop",
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
 				restoreAndFocus(window)
 			},

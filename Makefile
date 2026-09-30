@@ -1,5 +1,7 @@
 BINARY_NAME := upit
 CMD_DIR := ./cmd/upit
+DESKTOP_BINARY_NAME := upit-desktop
+DESKTOP_CMD_DIR := ./cmd/upit-desktop
 BUILD_DIR := bin
 
 # Detect OS and set OS-specific commands
@@ -21,6 +23,7 @@ else
 endif
 
 TARGET := $(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
+DESKTOP_TARGET := $(BUILD_DIR)/$(DESKTOP_BINARY_NAME)$(BINARY_EXT)
 
 # Command used to run the binary
 ifeq ($(OS),Windows_NT)
@@ -29,7 +32,7 @@ else
     RUN_CMD := ./$(TARGET)
 endif
 
-.PHONY: all build run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
+.PHONY: all build build-desktop run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
 
 all: build
 
@@ -40,6 +43,11 @@ $(BUILD_DIR):
 build: $(BUILD_DIR)
 	go build -o "$(TARGET)" $(CMD_DIR)
 	@echo Built $(TARGET) for $(DETECTED_OS)
+
+## build-desktop: Build upit-desktop for the current operating system
+build-desktop: $(BUILD_DIR)
+	go build -o "$(DESKTOP_TARGET)" $(DESKTOP_CMD_DIR)
+	@echo Built $(DESKTOP_TARGET) for $(DETECTED_OS)
 
 ## run: Build and run binary
 run: build
@@ -102,14 +110,15 @@ clean:
 help:
 	@echo Usage: make [target]
 	@echo Targets:
-	@echo   build          Build binary for current host OS ($(TARGET))
-	@echo   build-all      Cross-compile for Windows, Linux, and macOS
-	@echo   run            Build and run binary (e.g. make run ARGS="--help")
-	@echo   build-windows  Build binary for Windows (amd64)
-	@echo   build-linux    Build binaries for Linux (amd64, arm64)
-	@echo   build-darwin   Build binaries for macOS (amd64, arm64)
-	@echo   test           Run tests
-	@echo   test-race      Run tests with -race
-	@echo   vet            Run go vet
-	@echo   fmt            Run go fmt
-	@echo   clean          Remove build directory ($(BUILD_DIR))
+	@echo "  build          Build binary for current host OS ($(TARGET))"
+	@echo "  build-all      Cross-compile for Windows, Linux, and macOS"
+	@echo "  build-desktop  Build upit-desktop for current host OS ($(DESKTOP_TARGET))"
+	@echo "  run            Build and run binary (e.g. make run ARGS=\"--help\")"
+	@echo "  build-windows  Build binary for Windows (amd64)"
+	@echo "  build-linux    Build binaries for Linux (amd64, arm64)"
+	@echo "  build-darwin   Build binaries for macOS (amd64, arm64)"
+	@echo "  test           Run tests"
+	@echo "  test-race      Run tests with -race"
+	@echo "  vet            Run go vet"
+	@echo "  fmt            Run go fmt"
+	@echo "  clean          Remove build directory ($(BUILD_DIR))"
