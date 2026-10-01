@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <UserNotifications/UserNotifications.h>
 #include <stdatomic.h>
+#include <dispatch/dispatch.h>
 #include <stdint.h>
 
 static const int UPIT_ACTION_CANCEL = 1;
