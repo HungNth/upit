@@ -276,7 +276,11 @@ async function startManualUpload() {
   manualResult.value = null
   manualProgress.value = { phase: 'preparing', processed: 0, total: 0 }
   try {
-    manualResult.value = await StartManualUpload(options)
+    const result = await StartManualUpload(options)
+    manualResult.value = result
+    if (result.success) {
+      manualFile.value = null
+    }
   } catch (cause) {
     manualError.value = errorMessage(cause)
   } finally {
