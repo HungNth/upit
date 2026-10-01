@@ -5,7 +5,9 @@
             "request": {
                 "method": "POST",
                 "url": "https://upload.example.com/api/upload",
-                "headers": {},
+                "headers": {
+                    "Authorization": "Bearer YOUR_API_KEY"
+                },
                 "query": {},
                 "body": "multipart",
                 "fileField": "file",

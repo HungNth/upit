@@ -715,7 +715,7 @@ async function saveRepairDocument() {
 	}
 }
 function requestArea(area: Area) {
-  if (area === activeArea.value) {
+  if (state.value?.mode !== 'normal' || area === activeArea.value) {
     return
   }
   if (anyDirty.value) {
@@ -892,6 +892,7 @@ onUnmounted(() => {
           class="nav-item"
           :class="{ active: activeArea === area.id }"
           :aria-current="activeArea === area.id ? 'page' : undefined"
+          :disabled="state?.mode !== 'normal'"
           type="button"
           @click="requestArea(area.id)"
         >

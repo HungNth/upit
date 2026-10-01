@@ -192,9 +192,14 @@ h3 {
   transition: all 0.15s ease;
 }
 
-.nav-item:hover {
+.nav-item:hover:not(:disabled) {
   background: var(--surface-muted);
   color: var(--text);
+}
+
+.nav-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .nav-item.active {
