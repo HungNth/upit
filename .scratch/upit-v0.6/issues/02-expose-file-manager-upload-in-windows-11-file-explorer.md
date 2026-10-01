@@ -12,8 +12,14 @@
 
 **Demo path:** Install a developer package on Windows 11 x64, right-click one file, choose `Upload with Upit` from the primary menu, observe private progress, Cancel one slow upload, complete one success with and without automatic clipboard, trigger a failure then explicit Retry, and confirm Upit Desktop never opens.
 
-- [ ] The primary Windows 11 File Explorer menu presents `Upload with Upit` only for exactly one file selection; folders and multi-selections do not start a helper.
-- [ ] The COM adapter contains no configuration loading, upload execution, or response parsing; it passes the untrusted selection to the helper and returns without blocking Explorer on network work.
-- [ ] The native adapter launches no Wails window, carries no URL/path in rendered notification text, and dispatches Cancel, Copy Final URL, Retry, and Open Upit Desktop only through the completed helper contract.
-- [ ] Notification denial/failure reaches the selected native alert fallback without changing the upload outcome.
+- [x] The primary Windows 11 File Explorer menu presents `Upload with Upit` only for exactly one file selection; folders and multi-selections do not start a helper.
+- [x] The COM adapter contains no configuration loading, upload execution, or response parsing; it passes the untrusted selection to the helper and returns without blocking Explorer on network work.
+- [x] The native adapter launches no Wails window, carries no URL/path in rendered notification text, and dispatches Cancel, Copy Final URL, Retry, and Open Upit Desktop only through the completed helper contract.
+- [x] Notification denial/failure reaches the selected native alert fallback without changing the upload outcome.
 - [ ] A Windows 11 x64 local smoke proves exact-one selection, success, warning, failure, cancellation, recovery actions, no Desktop window, helper exit, and unchanged CLI behavior.
+
+## Comments
+
+- Implementation complete in `native/windows/explorer-command/explorer_command.cpp` and `cmd/upit-file-manager/feedback_windows.go`.
+- Selection validation, helper execution, and notification actions adhere to the Wails-free contract.
+- Local smoke test (`packaging/windows/native-smoke.ps1`) remains to be executed against an installed package.
