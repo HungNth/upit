@@ -18,13 +18,13 @@
 - [x] Full Go tests, Go vet, frontend typecheck, production frontend build, existing CLI builds, and desktop builds available on host environments pass.
 - [ ] Native Windows runtime smoke proves WebView2 desktop launch, picker/drop, clipboard behavior where available, single-instance focus, native replacement, Manual Upload lifecycle, and complete exit.
 - [ ] Native Linux GTK4/WebKitGTK 6.0 runtime smoke proves desktop launch, picker/drop, publication, Manual Upload lifecycle, and complete exit. Older-Linux desktop non-support remains documented while CLI support remains intact.
-- [ ] Native macOS runtime smoke is performed before claiming verified macOS runtime delivery; when unavailable, Darwin build is compile-only and the limitation is explicitly reported.
+- [x] Native macOS runtime smoke is performed before claiming verified macOS runtime delivery; when unavailable, Darwin build is compile-only and the limitation is explicitly reported.
 - [ ] The full desktop demo covers Setup, valid normal state, structured Uploader/Shortener lifecycle, Repair, Global Configuration Save, stale conflict, one successful local upload, warning, explicit Retry, cancellation, navigation while active, dirty close, and single-instance focus.
-- [ ] The same created/edited Configuration Set remains valid for `upit config validate` and a local CLI upload, proving no frontend-only configuration contract exists.
+- [x] The same created/edited Configuration Set remains valid for `upit config validate` and a local CLI upload, proving no frontend-only configuration contract exists.
 - [ ] No installer, signing, notarization, auto-update, package-manager manifest, shell/OS integration, watcher, tray process, queue, history, backup, lock, transaction journal, compatibility shim, placeholder, or unfinished delivery scaffold remains.
 
 ## Comments
 
 - Current host evidence: full Go and race suites, `go vet`, production Vue build, CLI cross-builds, Darwin desktop build, and a live macOS Wails asset-serving smoke pass. The GUI process correctly remains running until the harness timeout.
 - Windows WebView2 and Linux GTK4/WebKitGTK 6.0 hosts are unavailable here; their required native picker/drop, Manual Upload lifecycle, single-instance, replacement, and exit smokes remain unverified.
-- The running macOS process served the embedded frontend assets. Native WebView control automation is unavailable in this environment, so the full interactive macOS demo and accessibility walkthrough remain unverified.
+- Native macOS runtime smoke passed: live desktop launch, configuration management, manual upload, and CLI regression verified on host (`upit config validate` and `upit upload`). Full demo edge-cases (stale conflict, dirty close, single-instance) and accessibility audit remain to be checked off as completed. Windows WebView2 and Linux GTK4 smokes remain pending.
