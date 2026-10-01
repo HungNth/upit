@@ -27,6 +27,7 @@ type UploadOptions struct {
 type Outcome struct {
 	Result   Result
 	Warnings []string
+	Copied   bool
 }
 
 type Service struct {
@@ -36,10 +37,18 @@ type Service struct {
 }
 
 func (s Service) Upload(ctx context.Context, options UploadOptions) (Outcome, error) {
-	return s.upload(ctx, options, nil)
+	return s.UploadWithProgress(ctx, options, nil)
+}
+
+func (s Service) UploadWithProgress(ctx context.Context, options UploadOptions, progress ManualUploadProgressFunc) (Outcome, error) {
+	return s.uploadWithSnapshot(ctx, options, nil, progress)
 }
 
 func (s Service) upload(ctx context.Context, options UploadOptions, progress ManualUploadProgressFunc) (Outcome, error) {
+	return s.uploadWithSnapshot(ctx, options, nil, progress)
+}
+
+func (s Service) uploadWithSnapshot(ctx context.Context, options UploadOptions, expected *uploadFileSnapshot, progress ManualUploadProgressFunc) (Outcome, error) {
 	homeDir := s.HomeDir
 	if homeDir == nil {
 		homeDir = os.UserHomeDir
@@ -88,7 +97,7 @@ func (s Service) upload(ctx context.Context, options UploadOptions, progress Man
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	result, err := uploadFile(ctx, &client, options.FilePath, selected, func(processed, total int64) {
+	result, err := uploadFileWithSnapshot(ctx, &client, options.FilePath, selected, expected, func(processed, total int64) {
 		emitManualUploadProgress(progress, ManualUploadProgress{Phase: "uploading", Processed: processed, Total: total})
 	})
 	if err != nil {
@@ -127,6 +136,8 @@ func (s Service) upload(ctx context.Context, options UploadOptions, progress Man
 	}
 	if err := copier.Copy(ctx, result.FinalURL); err != nil {
 		outcome.Warnings = append(outcome.Warnings, fmt.Sprintf("copy to clipboard: %v", err))
+	} else {
+		outcome.Copied = true
 	}
 	return outcome, nil
 }

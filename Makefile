@@ -1,7 +1,9 @@
 BINARY_NAME := upit
 CMD_DIR := ./cmd/upit
 DESKTOP_BINARY_NAME := upit-desktop
+FILE_MANAGER_HELPER_NAME := upit-file-manager
 DESKTOP_CMD_DIR := ./cmd/upit-desktop
+FILE_MANAGER_HELPER_CMD_DIR := ./cmd/upit-file-manager
 DESKTOP_FRONTEND_DIR := $(DESKTOP_CMD_DIR)/frontend
 BUILD_DIR := bin
 
@@ -25,6 +27,7 @@ endif
 
 TARGET := $(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 DESKTOP_TARGET := $(BUILD_DIR)/$(DESKTOP_BINARY_NAME)$(BINARY_EXT)
+FILE_MANAGER_HELPER_TARGET := $(BUILD_DIR)/$(FILE_MANAGER_HELPER_NAME)$(BINARY_EXT)
 
 # Command used to run the binary
 ifeq ($(OS),Windows_NT)
@@ -33,7 +36,7 @@ else
     RUN_CMD := ./$(TARGET)
 endif
 
-.PHONY: all build setup-desktop build-desktop-frontend generate-desktop-bindings build-desktop run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
+.PHONY: all build setup-desktop build-desktop-frontend generate-desktop-bindings build-file-manager-helper build-desktop run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
 
 all: build
 
@@ -57,8 +60,13 @@ build-desktop-frontend:
 generate-desktop-bindings:
 	wails3 generate bindings $(DESKTOP_CMD_DIR) -i -d "$(DESKTOP_FRONTEND_DIR)/bindings"
 
-## build-desktop: Rebuild frontend assets, then build upit-desktop for the current operating system
-build-desktop: build-desktop-frontend $(BUILD_DIR)
+## build-file-manager-helper: Build the Wails-free File Manager Upload helper
+build-file-manager-helper: $(BUILD_DIR)
+	go build -o "$(FILE_MANAGER_HELPER_TARGET)" $(FILE_MANAGER_HELPER_CMD_DIR)
+	@echo Built $(FILE_MANAGER_HELPER_TARGET) for $(DETECTED_OS)
+
+## build-desktop: Rebuild frontend assets, helper, then build upit-desktop for the current operating system
+build-desktop: build-desktop-frontend build-file-manager-helper $(BUILD_DIR)
 	go build -o "$(DESKTOP_TARGET)" $(DESKTOP_CMD_DIR)
 	@echo Built $(DESKTOP_TARGET) for $(DETECTED_OS)
 
@@ -127,9 +135,9 @@ help:
 	@echo "  build-all                Cross-compile for Windows, Linux, and macOS"
 	@echo "  setup-desktop            Install desktop frontend dependencies from package-lock.json"
 	@echo "  build-desktop-frontend   Type-check and bundle desktop frontend assets"
-	@echo "  generate-desktop-bindings Regenerate Wails bindings after Go interface changes"
-	@echo "  build-desktop            Build frontend assets and upit-desktop ($(DESKTOP_TARGET))"
-	@echo "  run                      Build and run binary (e.g. make run ARGS=\"--help\")"
+	@echo "  build-file-manager-helper Build Wails-free File Manager Upload helper"
+	@echo "  generate-desktop-bindings Regenerate Wails bindings after exported Go interfaces change"
+	@echo "  build-desktop            Build frontend assets, helper, and upit-desktop ($(DESKTOP_TARGET))"
 	@echo "  build-windows  Build binary for Windows (amd64)"
 	@echo "  build-linux    Build binaries for Linux (amd64, arm64)"
 	@echo "  build-darwin   Build binaries for macOS (amd64, arm64)"

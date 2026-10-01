@@ -14,6 +14,10 @@ Upit is a headless-first, cross-platform file uploader. `upit` streams one file 
 - Manual Upload for exactly one regular file from a native picker or drag-and-drop, with per-upload Uploader, Shortener, clipboard, and timeout choices
 - Manual Upload progress, cancellation, explicit Retry, Final URL copying, and nonfatal Shortener or clipboard warnings
 - Hand-written Draft 2020-12 schemas for the three Configuration Set documents
+- File Manager Upload helper for exactly one regular file from Windows File Explorer
+- Windows 11 x64 primary context-menu package route through a native `IExplorerCommand`
+- Privacy-minimized native progress, cancellation, Copy, Retry, and configuration recovery actions
+- Protected-tag-only Windows package signing, checksums, install, and uninstall automation
 - Plain URL or machine-readable JSON CLI output
 - Context cancellation and optional whole-invocation upload timeout
 - Optional, nonfatal clipboard copying
@@ -47,24 +51,27 @@ make build
 ./bin/upit --help
 ```
 
-Build Upit Desktop from the repository root:
+Build Upit Desktop and the Wails-free File Manager Upload helper from the repository root:
 
 ```bash
 # First clone, or after package-lock.json changes.
 make setup-desktop
 
-# Type-checks/bundles the frontend, then embeds it in the native executable.
+# Type-checks/bundles the frontend, builds the helper, then embeds the frontend in upit-desktop.
 make build-desktop
 ./bin/upit-desktop
+./bin/upit-file-manager.exe <one-regular-file>
 ```
 
 `make build-desktop` assumes `node_modules` already exists; run `make setup-desktop` if frontend dependencies are missing. Run `make generate-desktop-bindings` only after changing an exported desktop Go method or model.
 
-## Upit Desktop
+## Upit Desktop and File Manager Upload
 
 Upit Desktop is one single-instance window that follows the operating system light/dark preference. It uses the same fixed `~/.config/upit/` Configuration Set and Wails-free application rules as the CLI. Manual Upload accepts one regular file, supports a native picker or drag-and-drop, blocks start while Configuration Set edits are dirty, reloads configuration before execution, and retains selected inputs for explicit Retry after failure or cancellation.
 
-v0.5 provides native runnable artifacts only. Installers, signing, notarization, auto-update, package-manager manifests, File Explorer/Finder integration, launchers, shell integration, upload history, queues, batch uploads, automatic retry, and background workers remain out of scope.
+File Manager Upload is a separate Wails-free one-shot operation. The Windows 11 x64 package registers `Upload with Upit` in File Explorer's primary menu through a signed package-identity `IExplorerCommand`. The adapter validates only selection shape and launches `upit-file-manager.exe`; configuration, upload, notifications, clipboard actions, retry state, cancellation, and privacy-safe progress remain in the shared application module.
+
+The v0.6 release target is Windows 11 x64 only. Windows 10 classic verbs, Windows ARM64, macOS Finder integration, portable registration, batch selection, queues, upload history, and resident workers remain out of scope. Signing and publishing are permitted only from protected SemVer tags; ordinary changes receive unsigned verification artifacts.
 
 ## Configuration
 

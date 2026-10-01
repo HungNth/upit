@@ -1,0 +1,203 @@
+name: Windows File Manager Upload
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Unsigned Windows verification
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm --prefix cmd/upit-desktop/frontend ci
+      - name: Build desktop and one-shot helper
+        run: make build-desktop
+      - name: Run Go tests
+        run: go test ./...
+      - name: Run Go race tests
+        run: go test -race ./...
+      - name: Run Go vet
+        run: go vet ./...
+      - name: Validate unsigned package inputs
+        shell: pwsh
+        run: .\packaging\windows\validate.ps1 -Version 0.6.0.0 -Publisher 'CN=Upit Development'
+      - name: Build unsigned verification package
+        shell: pwsh
+        run: .\packaging\windows\package.ps1 -Version 0.6.0.0 -Publisher 'CN=Upit Development'
+      - name: Upload unsigned artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-windows-x64-unsigned
+          path: dist/windows/
+
+  signed-build:
+    name: Signed protected-tag build and hosted verification
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: windows-latest
+    environment: upit-windows-release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify protected SemVer tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') { throw "Unsupported release tag: $env:GITHUB_REF_NAME" }
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm --prefix cmd/upit-desktop/frontend ci
+      - name: Build desktop and one-shot helper
+        run: make build-desktop
+      - name: Build CLI for continuity smoke
+        run: make build
+      - name: Decode signing certificate
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.UPIT_WINDOWS_CERTIFICATE_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) { throw 'Signing certificate secret is missing.' }
+          [IO.File]::WriteAllBytes((Join-Path $env:RUNNER_TEMP 'upit-signing.pfx'), [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+      - name: Build signed package
+        shell: pwsh
+        env:
+          UPIT_PROTECTED_RELEASE: 'true'
+          UPIT_MSIX_PUBLISHER: ${{ secrets.UPIT_MSIX_PUBLISHER }}
+          UPIT_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.UPIT_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          .\packaging\windows\release.ps1 `
+            -Tag $env:GITHUB_REF_NAME `
+            -Publisher $env:UPIT_MSIX_PUBLISHER `
+            -CertificatePath (Join-Path $env:RUNNER_TEMP 'upit-signing.pfx') `
+            -CertificatePassword $env:UPIT_WINDOWS_CERTIFICATE_PASSWORD
+      - name: Verify signature and hosted package registration cleanup
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem dist/windows -Filter '*.msix' | Select-Object -First 1
+          $payload = @('upit.exe', 'upit-desktop.exe', 'upit-file-manager.exe', 'upit-explorer-command.dll')
+          foreach ($name in $payload) {
+            $path = Join-Path (Resolve-Path bin) $name
+            if (-not (Test-Path $path -PathType Leaf)) { throw "External-location payload is missing $name." }
+          }
+          $signTool = (Get-Command signtool.exe -ErrorAction Stop).Source
+          & $signTool verify /pa /all $package.FullName
+          if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for MSIX with exit code $LASTEXITCODE." }
+          foreach ($name in $payload) {
+            & $signTool verify /pa /all (Join-Path (Resolve-Path bin) $name)
+            if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for $name with exit code $LASTEXITCODE." }
+          }
+          .\packaging\windows\install.ps1 -PackagePath $package.FullName -InstallDirectory (Resolve-Path bin)
+          $installed = Get-AppxPackage -Name 'HungNth.Upit'
+          if ($null -eq $installed) { throw 'Signed package did not register package identity.' }
+          $manifest = [xml](Get-AppxPackageManifest -Package $installed.PackageFullName)
+          if (-not $manifest.Package.Applications.Application.Extensions.Extension) { throw 'Installed package has no extension registration.' }
+          .\packaging\windows\uninstall.ps1
+          if (Get-AppxPackage -Name 'HungNth.Upit') { throw 'Uninstall left package registration behind.' }
+      - name: Create signed external payload bundle
+        shell: pwsh
+        run: |
+          $payload = "dist/windows/upit-windows-x64-payload-$env:GITHUB_REF_NAME.zip"
+          Compress-Archive -Path bin/upit.exe,bin/upit-desktop.exe,bin/upit-file-manager.exe,bin/upit-explorer-command.dll -DestinationPath $payload -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $payload).Hash.ToLowerInvariant()
+          Set-Content -Path "$payload.sha256" -Value "$hash  $(Split-Path $payload -Leaf)" -Encoding ASCII
+      - name: Upload signed package and payload for protected smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-windows-x64-signed-${{ github.run_id }}
+          path: |
+            dist/windows/
+            bin/upit.exe
+            bin/upit-desktop.exe
+            bin/upit-file-manager.exe
+            bin/upit-explorer-command.dll
+
+  native-smoke:
+    name: Protected Windows 11 x64 Explorer smoke
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: signed-build
+    runs-on: [self-hosted, Windows, X64, upit-native-smoke]
+    environment: upit-windows-native-smoke
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected tag
+        uses: actions/checkout@v4
+      - name: Download signed package and payload
+        uses: actions/download-artifact@v4
+        with:
+          name: upit-windows-x64-signed-${{ github.run_id }}
+          path: .
+      - name: Run interactive Windows 11 Explorer smoke
+        shell: pwsh
+        run: .\packaging\windows\native-smoke.ps1 -PackagePath (Get-ChildItem dist/windows -Filter '*.msix' | Select-Object -First 1).FullName -InstallDirectory (Resolve-Path bin)
+      - name: Upload protected native smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-windows-x64-native-smoke-${{ github.run_id }}
+          path: native-smoke-evidence.json
+
+  publish:
+    name: Publish signed package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: native-smoke
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed package
+        uses: actions/download-artifact@v4
+        with:
+          name: upit-windows-x64-signed-${{ github.run_id }}
+          path: .
+      - name: Verify and publish package, payload, and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem dist/windows -Filter '*.msix' | Select-Object -First 1
+          if ($null -eq $package) { throw 'MSIX package is missing from signed artifact.' }
+          $checksum = Get-Item "$($package.FullName).sha256" -ErrorAction Stop
+          $payload = Get-ChildItem dist/windows -Filter '*-payload-*.zip' | Select-Object -First 1
+          if ($null -eq $payload) { throw 'External payload archive is missing from signed artifact.' }
+          $payloadChecksum = Get-Item "$($payload.FullName).sha256" -ErrorAction Stop
+          $expectedPackageHash = ((Get-Content $checksum.FullName -Raw) -split '\s+')[0]
+          $actualPackageHash = (Get-FileHash -Algorithm SHA256 $package.FullName).Hash.ToLowerInvariant()
+          if ($expectedPackageHash -ne $actualPackageHash) { throw 'MSIX checksum does not match its checksum file.' }
+          $payload = Get-ChildItem dist/windows -Filter '*payload*.zip' | Select-Object -First 1
+          $payloadChecksum = Get-Item "$($payload.FullName).sha256"
+          $expectedPayloadHash = ((Get-Content $payloadChecksum.FullName -Raw) -split '\s+')[0]
+          $actualPayloadHash = (Get-FileHash -Algorithm SHA256 $payload.FullName).Hash.ToLowerInvariant()
+          if ($expectedPayloadHash -ne $actualPayloadHash) { throw 'External payload checksum does not match its checksum file.' }
+          gh release create $env:GITHUB_REF_NAME $package.FullName $checksum.FullName $payload.FullName $payloadChecksum.FullName --verify-tag --generate-notes

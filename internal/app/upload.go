@@ -52,6 +52,14 @@ func (r *uploadProgressReader) Read(data []byte) (int, error) {
 }
 
 func uploadFile(ctx context.Context, client *http.Client, filePath string, selected uploader, progress uploadProgressFunc) (Result, error) {
+	return uploadFileWithSnapshot(ctx, client, filePath, selected, nil, progress)
+}
+
+type uploadFileSnapshot struct {
+	info os.FileInfo
+}
+
+func uploadFileWithSnapshot(ctx context.Context, client *http.Client, filePath string, selected uploader, expected *uploadFileSnapshot, progress uploadProgressFunc) (Result, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return Result{}, failuref("validation", err, "open upload file: %v", err)
@@ -64,6 +72,10 @@ func uploadFile(ctx context.Context, client *http.Client, filePath string, selec
 	if !info.Mode().IsRegular() {
 		_ = file.Close()
 		return Result{}, failure("validation", "upload path must be a regular file", nil)
+	}
+	if expected != nil && (!os.SameFile(expected.info, info) || expected.info.Size() != info.Size() || !expected.info.ModTime().Equal(info.ModTime())) {
+		_ = file.Close()
+		return Result{}, failure("validation", "selected file changed before upload", nil)
 	}
 	if progress != nil {
 		progress(0, info.Size())
