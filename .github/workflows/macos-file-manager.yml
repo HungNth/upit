@@ -1,0 +1,221 @@
+name: macOS File Manager Upload
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Unsigned macOS arm64 verification
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm --prefix cmd/upit-desktop/frontend ci
+      - name: Build desktop, helper, and CLI
+        run: |
+          make build-macos
+      - name: Run Go tests
+        run: go test ./...
+      - name: Run Go race tests
+        run: go test -race ./...
+      - name: Run Go vet
+        run: go vet ./...
+      - name: Run native Finder selection tests
+        run: native/macos/finder-service/test.sh
+      - name: Build unsigned verification package
+        run: MACOS_VERSION=0.7.0 make package-macos
+      - name: Verify unsigned DMG checksum
+        run: |
+          artifact=$(find dist/macos -name '*.dmg' -type f | head -n 1)
+          checksum=$(cat "$artifact.sha256" | awk '{print $1}')
+          actual=$(shasum -a 256 "$artifact" | awk '{print $1}')
+          test "$checksum" = "$actual"
+      - name: Upload unsigned artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-macos-arm64-unsigned
+          path: |
+            dist/macos/
+            bin/upit-darwin-arm64
+
+  signed-build:
+    name: Signed protected-tag macOS package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref_protected == true
+    needs: verify
+    runs-on: macos-14
+    environment: upit-macos-release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify protected SemVer tag
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm --prefix cmd/upit-desktop/frontend ci
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.UPIT_MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.UPIT_MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.UPIT_MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          test -n "$CERTIFICATE_BASE64"
+          test -n "$CERTIFICATE_PASSWORD"
+          test -n "$KEYCHAIN_PASSWORD"
+          keychain="$RUNNER_TEMP/upit-signing.keychain-db"
+          echo "$CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/upit-signing.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$RUNNER_TEMP/upit-signing.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+      - name: Configure notarization profile
+        env:
+          NOTARY_PROFILE: ${{ secrets.UPIT_MACOS_NOTARY_PROFILE }}
+          APPLE_ID: ${{ secrets.UPIT_APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.UPIT_APPLE_TEAM_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.UPIT_APP_SPECIFIC_PASSWORD }}
+        run: |
+          test -n "$NOTARY_PROFILE"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_TEAM_ID"
+          test -n "$APP_SPECIFIC_PASSWORD"
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APP_SPECIFIC_PASSWORD"
+      - name: Build signed notarized package
+        env:
+          UPIT_PROTECTED_RELEASE: 'true'
+          MACOS_SIGNING_IDENTITY: ${{ secrets.UPIT_MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_PROFILE: ${{ secrets.UPIT_MACOS_NOTARY_PROFILE }}
+        run: |
+          test -n "$MACOS_SIGNING_IDENTITY"
+          version="${GITHUB_REF_NAME#v}"
+          make build-macos
+          make package-macos \
+            MACOS_VERSION="$version" \
+            MACOS_PROTECTED_TAG="$GITHUB_REF_NAME" \
+            MACOS_SIGNING_IDENTITY="$MACOS_SIGNING_IDENTITY" \
+            MACOS_NOTARY_PROFILE="$MACOS_NOTARY_PROFILE"
+      - name: Verify stapled package and checksum
+        run: |
+          artifact=$(find dist/macos -name '*.dmg' -type f | head -n 1)
+          test -n "$artifact"
+          xcrun stapler validate "$artifact"
+          spctl --assess --type open --context context:primary-signature "$artifact"
+          checksum=$(cat "$artifact.sha256" | awk '{print $1}')
+          actual=$(shasum -a 256 "$artifact" | awk '{print $1}')
+          test "$checksum" = "$actual"
+      - name: Upload signed package and CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-macos-arm64-signed-${{ github.run_id }}
+          path: |
+            dist/macos/
+            bin/upit-darwin-arm64
+
+  native-smoke:
+    name: Protected macOS 14 arm64 Finder smoke
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref_protected == true
+    needs: signed-build
+    runs-on: [self-hosted, macOS, ARM64, upit-native-smoke]
+    environment: upit-macos-native-smoke
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected tag
+        uses: actions/checkout@v4
+      - name: Download signed package and CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: upit-macos-arm64-signed-${{ github.run_id }}
+          path: .
+      - name: Mount stapled DMG
+        run: |
+          mkdir -p "$RUNNER_TEMP/upit-mounted"
+          artifact=$(find dist/macos -name '*.dmg' -type f | head -n 1)
+          hdiutil attach "$artifact" -nobrowse -readonly -mountpoint "$RUNNER_TEMP/upit-mounted"
+      - name: Run interactive macOS Finder smoke
+        run: |
+          artifact=$(find dist/macos -name '*.dmg' -type f | head -n 1)
+          packaging/macos/native-smoke.sh \
+            --app "$RUNNER_TEMP/upit-mounted/Upit.app" \
+            --install-directory "$RUNNER_TEMP/upit-install" \
+            --cli "$(pwd)/bin/upit-darwin-arm64" \
+            --evidence native-smoke-evidence.json \
+            --require-signature
+      - name: Unmount package
+        if: always()
+        run: hdiutil detach "$RUNNER_TEMP/upit-mounted" || true
+      - name: Upload protected native smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-macos-arm64-native-smoke-${{ github.run_id }}
+          path: native-smoke-evidence.json
+
+  publish:
+    name: Publish signed macOS package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.ref_protected == true
+    needs: native-smoke
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout protected tag
+        uses: actions/checkout@v4
+      - name: Download signed package and smoke evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: upit-macos-arm64-*
+          merge-multiple: true
+          path: .
+      - name: Verify release artifacts
+        run: |
+          artifact=$(find dist/macos -name '*.dmg' -type f | head -n 1)
+          test -n "$artifact"
+          checksum=$(cat "$artifact.sha256" | awk '{print $1}')
+          actual=$(shasum -a 256 "$artifact" | awk '{print $1}')
+          test "$checksum" = "$actual"
+          test -f native-smoke-evidence.json
+      - name: Publish package and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact=$(find dist/macos -name '*.dmg' -type f | head -n 1)
+          gh release create "$GITHUB_REF_NAME" "$artifact" "$artifact.sha256" "$artifact.metadata.json" \
+            --verify-tag --generate-notes

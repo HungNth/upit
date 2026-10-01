@@ -12,8 +12,14 @@
 
 **Demo path:** A protected SemVer tag produces a signed, notarized, stapled macOS package; install it on a clean macOS 14+ Apple Silicon host, enable the Service if System Settings requires it, invoke Finder’s action against a local endpoint, verify all recovery paths and no window, then uninstall and confirm the Service disappears.
 
-- [ ] Only protected SemVer tags access Developer ID, notarization, and publication credentials; ordinary CI builds unsigned verification artifacts without release secrets.
-- [ ] The production package signs every executable and nested helper with Hardened Runtime, completes notarization and stapling, and publishes verifiable checksums and version metadata.
-- [ ] Installation registers the Finder Service automatically and documents any user-controlled System Settings enablement; uninstall unregisters the Service and leaves no stale action.
+- [x] Only protected SemVer tags access Developer ID, notarization, and publication credentials; ordinary CI builds unsigned verification artifacts without release secrets.
+- [x] The production package signs every executable and nested helper with Hardened Runtime, completes notarization and stapling, and publishes verifiable checksums and version metadata.
+- [x] Installation registers the Finder Service automatically and documents any user-controlled System Settings enablement; uninstall unregisters the Service and leaves no stale action.
 - [ ] A signed macOS 14+ Apple Silicon smoke proves package trust, Finder Services or Quick Actions discovery, direct lifecycle, privacy-minimized feedback, cancellation, recovery actions, no-window/helper-exit behavior, CLI regression, and uninstall cleanup.
-- [ ] Release documentation identifies the Developer ID non-sandbox distribution model and excludes Mac App Store, Intel, older-macOS, and extension-based routes.
+- [x] Release documentation identifies the Developer ID non-sandbox distribution model and excludes Mac App Store, Intel, older-macOS, and extension-based routes.
+
+## Comments
+
+- Packaging is implemented in `packaging/macos/package.sh`, `validate.sh`, `install.sh`, `uninstall.sh`, and `native-smoke.sh`; the bundle contains Desktop, the NSServices provider, and the nested Wails-free helper.
+- `.github/workflows/macos-file-manager.yml` separates unsigned PR/branch verification from protected SemVer signing, notarization, stapling, checksum, smoke, and publish jobs.
+- The signed native smoke remains pending until a protected macOS 14+ Apple Silicon runner executes it; no signing or notarization claim is made from this Windows host.

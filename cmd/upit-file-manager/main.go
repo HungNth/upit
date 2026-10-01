@@ -2,17 +2,16 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 
 	"github.com/HungNth/upit/internal/app"
+	"github.com/HungNth/upit/internal/finder"
 )
 
 func main() {
-	os.Exit(run(os.Args[1:]))
+	lockNativeThread()
+	os.Exit(runWithPlatformLifecycle(os.Args[1:]))
 }
 
 func run(args []string) int {
@@ -23,12 +22,23 @@ func run(args []string) int {
 	switch {
 	case len(args) == 1:
 		return runUpload(ctx, runner, args[0])
+	case len(args) == 2 && args[0] == "--file-url":
+		return runFileURL(ctx, runner, args[1])
 	case len(args) == 2 && args[0] == "--action":
 		return runAction(ctx, runner, args[1])
 	default:
 		newNativeFeedback().Alert("Upit accepts exactly one selected file.")
 		return 2
 	}
+}
+
+func runFileURL(ctx context.Context, runner *app.FileManagerUploadService, rawURL string) int {
+	filePath, err := finder.SelectOneFileURL([]string{rawURL})
+	if err != nil {
+		newNativeFeedback().Alert("Upit accepts exactly one regular file.")
+		return 1
+	}
+	return runUpload(ctx, runner, filePath)
 }
 
 func runUpload(ctx context.Context, runner *app.FileManagerUploadService, filePath string) int {
@@ -120,21 +130,6 @@ func resultExitCode(result app.FileManagerUploadResult) int {
 		return 130
 	}
 	return 1
-}
-
-func openDesktop() error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	desktop := filepath.Join(filepath.Dir(executable), "upit-desktop.exe")
-	if _, err := os.Stat(desktop); err != nil {
-		return err
-	}
-	if err := exec.Command(desktop).Start(); err != nil {
-		return fmt.Errorf("start Upit Desktop: %w", err)
-	}
-	return nil
 }
 
 func resultSummary(result app.FileManagerUploadResult) string {

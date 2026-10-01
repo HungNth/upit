@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_PATH=""
+REQUIRE_SIGNATURE=0
+
+usage() {
+    cat <<'EOF'
+Usage: packaging/macos/validate.sh --app PATH [--require-signature]
+
+Validates the macOS 14+ Apple Silicon bundle layout, Finder Service metadata, and optional signatures.
+EOF
+}
+
+while (($# > 0)); do
+    case "$1" in
+        --app) APP_PATH="$2"; shift 2 ;;
+        --require-signature) REQUIRE_SIGNATURE=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if [[ -z "$APP_PATH" || ! -d "$APP_PATH" ]]; then
+    echo "--app must point to an existing Upit.app bundle." >&2
+    exit 2
+fi
+if [[ "$(basename "$APP_PATH")" != "Upit.app" ]]; then
+    echo "The app bundle must be named Upit.app." >&2
+    exit 2
+fi
+
+service_app="$APP_PATH/Contents/Helpers/UpitFinderService.app"
+file_manager_app="$service_app/Contents/Helpers/UpitFileManager.app"
+root_info="$APP_PATH/Contents/Info.plist"
+service_info="$service_app/Contents/Info.plist"
+file_manager_info="$file_manager_app/Contents/Info.plist"
+service_binary="$service_app/Contents/MacOS/UpitFinderService"
+desktop_binary="$APP_PATH/Contents/MacOS/upit-desktop"
+file_manager_binary="$file_manager_app/Contents/MacOS/upit-file-manager"
+
+for input in "$root_info" "$service_info" "$file_manager_info" "$service_binary" "$desktop_binary" "$file_manager_binary"; do
+    if [[ ! -e "$input" ]]; then
+        echo "Required package member is missing: $input" >&2
+        exit 1
+    fi
+done
+
+for plist in "$root_info" "$service_info" "$file_manager_info"; do
+    plutil -lint "$plist" >/dev/null
+done
+
+service_name="$(plutil -extract 'NSServices.0.NSMenuItem.default' raw -o - "$service_info")"
+if [[ "$service_name" != "Upload with Upit" ]]; then
+    echo "Finder Service name is incorrect." >&2
+    exit 1
+fi
+message="$(plutil -extract 'NSServices.0.NSMessage' raw -o - "$service_info")"
+if [[ "$message" != "uploadFileService:userData:error:" ]]; then
+    echo "Finder Service message selector is incorrect." >&2
+    exit 1
+fi
+for plist in "$service_info" "$file_manager_info"; do
+    background="$(plutil -extract 'LSBackgroundOnly' raw -o - "$plist")"
+    if [[ "$background" != "true" ]]; then
+        echo "Background-only metadata is missing from $plist." >&2
+        exit 1
+    fi
+done
+
+for binary in "$service_binary" "$desktop_binary" "$file_manager_binary"; do
+    if [[ "$(lipo -archs "$binary")" != *arm64* ]]; then
+        echo "Package member is not an Apple Silicon Mach-O: $binary" >&2
+        exit 1
+    fi
+done
+
+if [[ "$REQUIRE_SIGNATURE" == 1 ]]; then
+    for bundle in "$file_manager_app" "$service_app" "$APP_PATH"; do
+        codesign --verify --deep --strict --verbose=2 "$bundle" >/dev/null
+    done
+    entitlements="$(mktemp "${TMPDIR:-/tmp}/upit-entitlements.XXXXXX")"
+    trap 'rm -f "$entitlements"' EXIT
+    codesign -d --entitlements :- "$APP_PATH" >"$entitlements" 2>/dev/null || true
+    if grep -q 'com.apple.security.app-sandbox' "$entitlements"; then
+        echo "App Sandbox is not supported for the fixed Configuration Set contract." >&2
+        exit 1
+    fi
+fi
+
+echo "Valid macOS 14+ arm64 Upit bundle: $APP_PATH"

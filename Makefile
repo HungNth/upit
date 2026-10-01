@@ -6,6 +6,7 @@ DESKTOP_CMD_DIR := ./cmd/upit-desktop
 FILE_MANAGER_HELPER_CMD_DIR := ./cmd/upit-file-manager
 DESKTOP_FRONTEND_DIR := $(DESKTOP_CMD_DIR)/frontend
 BUILD_DIR := bin
+MACOS_VERSION ?= 0.7.0
 
 # Detect OS and set OS-specific commands
 ifeq ($(OS),Windows_NT)
@@ -36,7 +37,7 @@ else
     RUN_CMD := ./$(TARGET)
 endif
 
-.PHONY: all build setup-desktop build-desktop-frontend generate-desktop-bindings build-file-manager-helper build-desktop run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
+.PHONY: all build setup-desktop build-desktop-frontend generate-desktop-bindings build-file-manager-helper build-desktop run test test-race vet fmt clean help build-all build-windows build-linux build-darwin build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 build-macos package-macos validate-macos
 
 all: build
 
@@ -104,6 +105,22 @@ build-darwin-arm64: $(BUILD_DIR)
 
 build-darwin: build-darwin-amd64 build-darwin-arm64
 
+## build-macos: Build the macOS 14+ Apple Silicon CLI, helper, and desktop binaries
+build-macos: export GOOS := darwin
+build-macos: export GOARCH := arm64
+build-macos: export CGO_ENABLED := 1
+build-macos: build-desktop
+	go build -o "$(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64" $(CMD_DIR)
+
+## package-macos: Build an unsigned or protected signed/notarized macOS package
+package-macos: build-macos
+	packaging/macos/package.sh --version "$(MACOS_VERSION)" $(if $(MACOS_SIGNING_IDENTITY),--signing-identity "$(MACOS_SIGNING_IDENTITY)",) $(if $(MACOS_NOTARY_PROFILE),--notary-profile "$(MACOS_NOTARY_PROFILE)",) $(if $(MACOS_PROTECTED_TAG),--protected-tag "$(MACOS_PROTECTED_TAG)",)
+
+## validate-macos: Validate an extracted Upit.app bundle
+validate-macos:
+	packaging/macos/validate.sh --app "$(MACOS_APP)" $(if $(MACOS_REQUIRE_SIGNATURE),--require-signature,)
+
+
 build-all: build-windows build-linux build-darwin
 
 ## test: Run all test suites
@@ -141,6 +158,9 @@ help:
 	@echo "  build-windows  Build binary for Windows (amd64)"
 	@echo "  build-linux    Build binaries for Linux (amd64, arm64)"
 	@echo "  build-darwin   Build binaries for macOS (amd64, arm64)"
+	@echo "  build-macos   Build macOS 14+ Apple Silicon CLI, helper, and desktop"
+	@echo "  package-macos Build unsigned or protected macOS DMG"
+	@echo "  validate-macos Validate an extracted Upit.app bundle"
 	@echo "  test           Run tests"
 	@echo "  test-race      Run tests with -race"
 	@echo "  vet            Run go vet"

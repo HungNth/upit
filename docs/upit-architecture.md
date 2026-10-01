@@ -1510,15 +1510,16 @@ https://files.example.com/file.zip
 - Run one desktop instance, never use a system tray or resident worker, and exit completely after resolving active uploads and unsaved edits when the window closes.
 - Prove the desktop contract, including its system light/dark behavior, on Windows, macOS, and modern GTK4/WebKitGTK Linux. v0.5 includes no installer, signing, notarization, or File Manager Upload.
 
-### v0.6 — Windows File Manager Upload (planned)
+### v0.6 — Windows File Manager Upload (implemented; protected smoke pending)
 
 - Deliver a signed Windows 11 x64 desktop package with `Upload with Upit` in the primary File Explorer context menu through `IExplorerCommand` and package identity.
 - File Manager Upload accepts exactly one regular file, applies Global Configuration defaults without opening Upit Desktop, reports privacy-minimized native progress and outcomes, and exits after use.
 
-### v0.7 — macOS File Manager Upload (planned)
+### v0.7 — macOS File Manager Upload (implementation complete; protected smoke pending)
 
-- Deliver a Developer ID-signed and notarized macOS 14+ Apple Silicon desktop package with an `Upload with Upit` NSServices background helper surfaced via Finder Services and Quick Actions.
-- The background-only Service accepts exactly one regular file, applies Global Configuration defaults without opening Upit Desktop, reports privacy-minimized native progress and outcomes, and exits after use.
+- Deliver a Developer ID-signed and notarized macOS 14+ Apple Silicon desktop package with an `Upload with Upit` `NSServices` background helper surfaced via Finder Services and Quick Actions.
+- The background-only Service accepts exactly one regular file URL, delegates to the shared Wails-free File Manager Upload operation, reports privacy-minimized native progress and recovery actions, and exits after use.
+- The package is outside App Sandbox so Finder, Desktop, and CLI continue to use the fixed `~/.config/upit/` Configuration Set. Protected-tag CI owns signing, notarization, stapling, checksums, installation, smoke evidence, and publication.
 
 ### v1.0 — Remaining Distribution and OS Integration
 
