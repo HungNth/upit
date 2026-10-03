@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] A Go 1.23+ CLI module builds an `upit` executable without Wails, WebView, or GUI dependencies.
 - [ ] `upit upload <file>` resolves the current user's fixed Upit configuration directory and loads version-1 global and Uploader configuration.
@@ -17,3 +17,7 @@
 - [ ] Success prints exactly the URL and a trailing newline to stdout, then the process exits.
 - [ ] The primary CLI-seam test uses temporary configuration, a real temporary file, and a local HTTP server to verify multipart metadata and bytes end to end.
 - [ ] A demo command against the local test endpoint proves the first vertical slice outside a mocked transport.
+
+## Comments
+
+- 2026-10-03 backlog audit: this ticket is dispositioned `wontfix`/`ready-for-human`. Its version-1 Global Configuration/Uploader acceptance conflicts with approved v0.2/v0.3 version-2 cutovers and the no-compatibility principle. Historical version-1 behavior is not restored.

@@ -1,6 +1,6 @@
 # Upit v0.4 — Configuration Management
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Problem Statement
 

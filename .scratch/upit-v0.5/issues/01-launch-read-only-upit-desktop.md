@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -19,6 +19,11 @@
 - [x] A second desktop launch restores and focuses the existing window rather than creating a competing instance.
 - [x] The desktop has no system tray or resident background behavior; closing a clean idle window exits the process.
 - [x] Existing CLI builds, tests, output, exit codes, cancellation, and Configuration Management commands remain unchanged.
-- [ ] A native runnable desktop smoke verifies window startup, sidebar navigation, system light/dark theme response where observable, second-launch focus, and clean process exit on an available host platform.
+- [x] A native runnable desktop smoke verifies window startup, sidebar navigation, system light/dark theme response where observable, second-launch focus, and clean process exit on an available host platform.
 
-**Verification note:** Native Windows smoke directly verified WebView2 startup, primary window health, second-instance exit, foreground focus, asset loading, and clean exit. Windows UI Automation did not expose the WebView's sidebar controls, so native navigation and native theme-response evidence remain unverified. Supplemental Vite/Chromium visual smoke verified the rendered sidebar/read-only shell but is not native Wails evidence.
+**Earlier verification note:** Native Windows smoke covered startup, primary window health, second-instance exit/focus, assets, and clean exit; sidebar/theme interaction remained unverified in that earlier run. Supplemental Vite evidence was not native proof.
+
+## Comments
+
+- 2026-10-03: actual rebuilt macOS Wails WebView verified window startup and all sidebar areas, native assets, Setup/normal/Repair states, and clean process exit 0. Second launch exited 0 and the original native window was observed visible and focused, with `document.hasFocus()` true.
+- Native appearance smoke changed macOS appearance to light and dark, observing the real WebView media query and body background `rgb(250, 250, 250)` then `rgb(9, 9, 11)`. The original system appearance was restored in a finally block. Native focused-window capture provided visual proof; no Vite browser was substituted.

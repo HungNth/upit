@@ -6,7 +6,7 @@
 
 **Blocked by:** 02 — Configure and protect practical named Uploaders
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] Automatic HTTP redirects are disabled; every 3xx response is handled as an unsuccessful endpoint response.
 - [ ] Only HTTP 2xx responses can become successful uploads.
@@ -20,3 +20,7 @@
 - [ ] No automatic retry occurs after request, network, response, or parse failure.
 - [ ] CLI-seam tests cover 3xx, 4xx/5xx with and without extracted errors, oversized responses, nested/array/filter paths, missing/multiple/null/non-string selections, invalid result URLs, and secret reflection.
 - [ ] A demo shows a failing endpoint produces a sanitized, stage-aware diagnostic and no success output.
+
+## Comments
+
+- 2026-10-03 backlog audit: this ticket is dispositioned `wontfix`/`ready-for-human`. Its parent v0.1 document contract conflicts with approved v0.2/v0.3 cutovers and the no-compatibility principle. Historical version-1 behavior is not restored.

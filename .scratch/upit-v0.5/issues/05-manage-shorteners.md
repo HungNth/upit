@@ -4,7 +4,7 @@
 
 **Blocked by:** 02: Edit Global Configuration safely
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -21,4 +21,8 @@
 - [x] Saves and deletion detect stale documents, use safe native publication, preserve strict diagnostics/redaction, and introduce no backup, lock, automatic merge, or cross-document transaction journal.
 - [x] Local-server regression coverage proves an edited Shortener still produces the existing Final URL or nonfatal fallback warning behavior through the production upload workflow.
 
-**Verification note:** Focused tests cover optional creation, masked values, reference-blocked rename/delete, clearing the default, final-document removal, and safe publication. CLI smoke covers edited Shortener Final URL and nonfatal fallback. Native WebView UI interaction was not directly automated.
+**Earlier verification note:** Focused tests covered optional creation, masked values, reference-blocked rename/delete, clearing the default, final-document removal, and safe publication. CLI smoke covered edited Shortener Final URL and nonfatal fallback. The later native interaction evidence is recorded below.
+
+## Comments
+
+- 2026-10-03: actual macOS WebView created and saved a structured Shortener, then ran its real Go/HTTP shortening path. Native regression proved exact-name rejection, Rename, explicit Delete confirmation, successful close, and initial/restored focus after replacing unsupported JavaScript prompt/confirm APIs with in-app dialogs. Edited documents passed actual CLI validation/upload; native Manual Upload proved nonfatal Shortener HTTP-502 fallback. Full race-enabled Go suite and vet passed, including final optional-document deletion and reference guards.

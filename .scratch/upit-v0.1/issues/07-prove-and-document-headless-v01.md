@@ -6,7 +6,7 @@
 
 **Blocked by:** 04 — Stabilize the automation output contract; 05 — Cancel and time-limit uploads safely; 06 — Copy successful results to the clipboard optionally
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] User documentation explains installation/build, the fixed configuration location on every OS, required Unix permissions, Uploader selection, all v0.1 flags, stdout/stderr behavior, exit codes, timeout, cancellation, and clipboard warnings.
 - [ ] The version-1 example configuration delivered by ticket 02 remains accurate, contains no real credentials or future fields, and passes the same strict loader used by the CLI.
@@ -17,3 +17,7 @@
 - [ ] An actual built binary uploads a temporary file to a local endpoint using a mode-0600 Uploader file, emits the expected plain and JSON results, and exits completely.
 - [ ] The smoke observes no resident Upit process after success, failure, or cancellation.
 - [ ] No URL shortener, GUI, daemon, tray, watcher, automatic retry, multi-file support, or release packaging is introduced.
+
+## Comments
+
+- 2026-10-03 backlog audit: this ticket is dispositioned `wontfix`/`ready-for-human`. Its version-1 examples and prohibition of Shorteners/desktop/packaging conflict with approved later specifications. Historical version-1 behavior is not restored.

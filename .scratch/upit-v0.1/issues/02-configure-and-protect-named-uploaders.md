@@ -6,7 +6,7 @@
 
 **Blocked by:** 01 — Upload one file with the default Uploader
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] Global configuration version 1 accepts only the default Uploader and clipboard-default fields; unsupported future settings and unknown fields fail validation.
 - [ ] Uploader configuration version 1 accepts only named Uploaders; unsupported shortener definitions and unknown fields fail validation.
@@ -21,3 +21,7 @@
 - [ ] Multipart `Content-Type` remains owned by Upit; a Uploader cannot override its generated boundary.
 - [ ] CLI-seam tests prove Uploader precedence, both flag positions, headers, query values, static fields, strict validation, permission rejection, and zero network calls on invalid input.
 - [ ] A demo uploads through a non-default named Uploader and shows the server received every configured request value.
+
+## Comments
+
+- 2026-10-03 backlog audit: this ticket is dispositioned `wontfix`/`ready-for-human`. Its version-1 Uploader acceptance conflicts with approved v0.2/v0.3 version-2 cutovers and the no-compatibility principle. Historical version-1 behavior is not restored.

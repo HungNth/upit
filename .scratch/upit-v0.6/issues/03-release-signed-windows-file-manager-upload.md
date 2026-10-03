@@ -4,7 +4,7 @@
 
 **Blocked by:** 02: Expose File Manager Upload in Windows 11 File Explorer
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent specification:** `../spec.md`
 
@@ -22,3 +22,4 @@
 
 - GitHub Actions workflow (`.github/workflows/windows-file-manager.yml`) and packaging scripts (`packaging/windows/`) configured.
 - Final release verification with actual signing and signed smoke proof will be executed upon triggering a release tag.
+- 2026-10-03 audit: blocked by ticket 02 native evidence and a trusted signed Windows package/native runner. No release tag or commit was created. Run the protected release workflow and retain signed native smoke evidence before resolving this ticket.

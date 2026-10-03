@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Launch the read-only Upit Desktop; 02: Edit Global Configuration safely
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -16,10 +16,13 @@
 - [x] Repair identifies missing required documents, malformed JSON with line/column, unsupported versions, permission failures, strict semantic failures, and cross-document reference failures with existing redaction.
 - [x] Manual Upload remains unavailable throughout Setup and Repair.
 - [x] Raw Repair is locked by default and requires explicit user confirmation warning that the document may reveal credentials.
-- [ ] Unlock exposes the complete original document only for the current session; leaving Repair or closing the desktop application relocks it and persists neither raw contents nor reveal state.
+- [x] Unlock exposes the complete original document only for the current session; leaving Repair or closing the desktop application relocks it and persists neither raw contents nor reveal state.
 - [x] Raw Repair delegates strict syntax, document, and cross-document validation to Go and cannot Save invalid content.
 - [x] Successful repair uses the safe canonical publication path and returns to normal structured editing only when the complete Configuration Set is valid.
 - [x] Tests prove Repair never silently resets, truncates, writes draft sidecars, logs credentials, or enables an upload from invalid configuration.
 
-**Verification note:** Startup tests cover partial/missing, malformed line/column, unsupported-version, Unix permission, cross-document, stale, publication/reclassification, and CLI upload refusal cases. The frontend now clears unlocked raw state after successful repair, repair-kind changes, and unmount; failed unlock stays locked and displays its diagnostic. Native Repair interaction remains unverified because WebView controls are unavailable to automation on this host.
+**Earlier verification note:** Startup tests covered partial/missing, malformed line/column, unsupported-version, Unix permission, cross-document, stale, publication/reclassification, and CLI refusal. Frontend cleanup covered successful repair, kind changes, and unmount; the later actual native session evidence is recorded below.
 
+## Comments
+
+- 2026-10-03: actual macOS Wails WebView opened a malformed temporary Uploader document in locked Repair with Manual Upload disabled. Explicit Unlock exposed exactly the original bytes; changing document kind removed raw contents and relocked. Closing while unlocked exited 0, left original bytes unchanged, and created no sidecar/reveal files. A fresh native process reopened locked with no raw textarea. Validated Save canonically published the corrected document, left Repair, and removed raw state. Full race-enabled Go suite and vet passed.

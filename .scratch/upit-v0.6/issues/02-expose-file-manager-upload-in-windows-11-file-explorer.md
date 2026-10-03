@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Deliver one-shot File Manager Upload
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent specification:** `../spec.md`
 
@@ -23,3 +23,4 @@
 - Implementation complete in `native/windows/explorer-command/explorer_command.cpp` and `cmd/upit-file-manager/feedback_windows.go`.
 - Selection validation, helper execution, and notification actions adhere to the Wails-free contract.
 - Local smoke test (`packaging/windows/native-smoke.ps1`) remains to be executed against an installed package.
+- 2026-10-03 audit: native acceptance remains unchecked. The available host is macOS, and no remote Windows runner is configured. Run `packaging/windows/native-smoke.ps1` on Windows 11 x64 with the installed developer package; compilation or shared Go tests do not prove Explorer discovery or interaction.

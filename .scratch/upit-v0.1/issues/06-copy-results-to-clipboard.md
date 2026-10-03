@@ -6,7 +6,7 @@
 
 **Blocked by:** 04 — Stabilize the automation output contract
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] Clipboard copying is disabled by default in version-1 global configuration.
 - [ ] `--clipboard` and `--no-clipboard` override the configured value in either flag position, with CLI taking precedence over configuration.
@@ -17,3 +17,7 @@
 - [ ] Upload, parse, and configuration failures never attempt clipboard copying.
 - [ ] A deterministic test adapter proves enabled/disabled behavior, CLI-over-config precedence, copied value, no-copy-on-failure, and nonfatal warning behavior through the CLI seam.
 - [ ] A headless smoke demonstrates that absence of clipboard tooling cannot invalidate an otherwise successful upload.
+
+## Comments
+
+- 2026-10-03 backlog audit: this ticket is dispositioned `wontfix`/`ready-for-human`. Its version-1 Global Configuration acceptance conflicts with approved version-2 loading and the no-compatibility principle. Historical version-1 behavior is not restored.

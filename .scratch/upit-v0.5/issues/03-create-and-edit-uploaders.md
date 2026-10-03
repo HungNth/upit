@@ -4,7 +4,7 @@
 
 **Blocked by:** 02: Edit Global Configuration safely
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -20,6 +20,11 @@
 - [x] Arbitrary nested request `data` uses a field-scoped JSON editor with syntax feedback and Go-authoritative placeholder/semantic validation.
 - [x] Sensitive configured values are masked by default; reveal, edit, and copy require explicit action and reveal state is not persisted.
 - [x] Explicit valid-only Save canonically publishes the complete Uploader document, preserves unrelated Uploaders, detects stale snapshots, and does not create backup, lock, or draft files.
-- [ ] End-to-end tests and an application smoke prove all Request Body Modes and Response Extractor configurations still execute through the existing CLI upload path after desktop editing.
+- [x] End-to-end tests and an application smoke prove all Request Body Modes and Response Extractor configurations still execute through the existing CLI upload path after desktop editing.
 
-**Verification note:** The permanent post-edit CLI smoke covers multipart/body, binary/header, form/body, json/json, and binary/regex extraction after `SaveUploaderEditor`; focused tests cover masked values, stale saves, invalid drafts, canonical persistence, and incompatible-field cleanup. Native WebView editor interaction was not directly automated and is not claimed.
+**Earlier verification note:** The permanent post-edit CLI smoke covered multipart/body, binary/header, form/body, json/json, and binary/regex after `SaveUploaderEditor`; focused tests covered masked values, stale saves, invalid drafts, canonical persistence, and incompatible-field cleanup. Later native evidence and the discovered transition fix are recorded below.
+
+## Comments
+
+- 2026-10-03: actual rebuilt macOS Wails WebView edited/saved one real Uploader through multipart/body, binary/header, form/regex, and json/json. For each native Save, actual `bin/upit upload` read the persisted document and uploaded to a real local HTTP server; assertions checked multipart file content, exact binary bytes, decoded form text, JSON text, all four extractors, exact stdout/stderr, and exit 0.
+- Found and fixed the UI transition bug: changing extractor type retained incompatible hidden fields, so valid JSON-to-body editing failed Go validation. Setup and Uploader URL/error type changes now clear incompatible fields without weakening Go validation. The permanent native regression ran red against the old embedded bundle and green after rebuilding/restarting, covering URL and error JSON-to-body Save. Full race-enabled Go suite/vet and final frontend/native builds passed.

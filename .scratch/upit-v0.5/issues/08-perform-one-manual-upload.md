@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Launch the read-only Upit Desktop
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -20,8 +20,10 @@
 - [x] Success prominently presents Final URL, shows Original URL only when different, preserves warning order, and provides a Copy action for Final URL.
 - [x] Failure presents sanitized stage, message, and HTTP status when available while preserving the selected input and overrides.
 - [x] Retry is explicit, performs a fresh configuration preflight, and causes exactly one new attempt; no automatic retry, queue, history, auto-open, or batch behavior is added.
-- [ ] Local-server end-to-end tests and a desktop smoke prove one successful upload, one Shortener fallback, one clipboard warning, one structured failure, and one explicit retry.
+- [x] Local-server end-to-end tests and a desktop smoke prove one successful upload, one Shortener fallback, one clipboard warning, one structured failure, and one explicit retry.
 
 ## Comments
 
 - The Wails-free Manual Upload test covers default/override selection, Shortener processing, clipboard behavior, invalid timeout, and local-path redaction. Native picker/drop interaction remains part of the cross-platform release smoke in ticket 10.
+- Local-server tests in `internal/app/manual_upload_test.go` (`TestManualUploadFailureFallbackAndWarningVariants`) verify the end-to-end outcome variants: successful upload, Shortener fallback with warning preservation, clipboard failure warning, structured HTTP 502 endpoint failure, and explicit retry. Native picker/drop interaction remains part of the cross-platform release smoke in ticket 10.
+- 2026-10-03: actual macOS Wails WebView smoke injected the existing native file-drop event, then clicked Upload/Retry controls. Real Go file reads and local HTTP requests proved success, HTTP-502 Shortener fallback, structured response-stage HTTP-502 failure, and one explicit Retry with exactly one new upload/shortening sequence. A separate native launch without clipboard tooling preserved success and rendered the clipboard warning. This is native application/HTTP evidence, not proof of OS picker/drop delivery. New isolated `TestManualUploadFailureFallbackAndWarningVariants` and existing suite passed with race detection; vet passed.

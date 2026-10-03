@@ -4,7 +4,7 @@
 
 **Blocked by:** 08: Perform one Manual Upload
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -20,8 +20,9 @@
 - [x] Active operations use their starting immutable configuration snapshot; saves during the operation affect only later uploads.
 - [x] Selected file and overrides remain available after cancellation or failure for an explicit later Retry.
 - [x] Close during an active upload asks for confirmation; confirmed close cancels, waits for resource release, and then exits with no tray or resident process.
-- [ ] Deterministic application tests and a real desktop smoke verify phase order, byte progress, cancellation, navigation while active, close behavior, and complete process exit.
+- [x] Deterministic application tests and a real desktop smoke verify phase order, byte progress, cancellation, navigation while active, close behavior, and complete process exit.
 
 ## Comments
 
 - The application test drives real streamed bytes to a local endpoint, observes preparation and monotonic transfer progress, cancels, and proves prompt return. Native close/navigation interaction remains part of the cross-platform release smoke in ticket 10.
+- 2026-10-03: race-enabled application tests passed for phase ordering and resource release. Actual macOS Wails WebView/local HTTP smoke displayed Uploading and `18 bytes of 18 bytes`, preserved active progress while navigating to Uploaders and back, canceled into the canceled-result state, and displayed the active-close confirmation. Confirmed close canceled and the supervised native process exited 0. The server trigger was explicit and bounded; there was no automatic Retry.

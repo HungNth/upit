@@ -4,7 +4,7 @@
 
 **Blocked by:** 03: Create and edit Uploaders
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -21,4 +21,8 @@
 - [x] Rename/delete detect stale documents and preserve both disk and draft on conflict; no lock, backup, auto-merge, or cross-document journal is introduced.
 - [x] End-to-end tests prove every successful lifecycle action leaves a Configuration Set accepted by `upit config validate` and the current default upload flow.
 
-**Verification note:** Lifecycle tests cover successful unreferenced rename/delete, adjacent selection, `ValidateConfiguration`, invalid/duplicate names, stale rename rejection, default guards, and final-Uploader rejection. The permanent CLI smoke performs rename/delete and then runs `upit upload` through the current default Uploader. Native WebView UI interaction was not directly automated.
+**Earlier verification note:** Lifecycle tests covered successful unreferenced rename/delete, adjacent selection, `ValidateConfiguration`, invalid/duplicate names, stale rename rejection, default guards, and final-Uploader rejection. Native interaction evidence and the discovered dialog fix are recorded below.
+
+## Comments
+
+- 2026-10-03: fixed the native WebView lifecycle blocker: macOS `window.prompt()` returned null and `window.confirm()` returned false without usable dialogs. In-app Vue dialogs now execute real Go Rename/Delete publication, preserve exact names, retain errors, close after success, and manage initial/restored focus and keyboard containment. `scripts/native-dialog-smoke.mjs` passed against an actual rebuilt native Wails WebView, including whitespace rejection, successful rename, confirmed deletion, and focus assertions. Persisted documents then passed actual `bin/upit config validate` and a selected-default local HTTP upload. Full race-enabled Go suite and vet passed.

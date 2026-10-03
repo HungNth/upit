@@ -4,7 +4,7 @@
 
 **Blocked by:** v0.6 / 03: Release signed Windows File Manager Upload
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent specification:** `../spec.md`
 
@@ -24,3 +24,4 @@
 - Shared Go boundary: `internal/finder` validates local file URLs; `cmd/upit-file-manager` retains all Configuration Set, upload, action-token, cancellation, and feedback policy.
 - Darwin feedback uses an Objective-C `UserNotifications`/`AppKit` bridge in `feedback_darwin.m`; notification denial falls back to a modeless main-thread AppKit progress panel with Cancel, and terminal actions use main-thread native alerts.
 - The real macOS 14+ Apple Silicon Finder smoke remains pending because this development host is Windows; `packaging/macos/native-smoke.sh` is the protected runner path.
+- 2026-10-03 audit on macOS Apple Silicon: `osascript -e 'tell application "System Events" to get UI elements enabled'` returned `false`; unattended Finder interaction is not available. Native discovery, action dispatch, recovery, and privacy remain unverified. `packaging/macos/native-smoke.sh` is interactive and replaces the real Configuration Set and installed application during its run; it was not executed without approval for those destructive actions. Ticket v0.6/03 also remains unresolved.

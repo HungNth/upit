@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Launch the read-only Upit Desktop
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -19,6 +19,10 @@
 - [x] Mutations refuse linked targets, preserve documented permission behavior, and retain the existing Windows ambiguous-publication recovery contract.
 - [x] Snapshot comparison detects external changes on focus, explicit Refresh, and immediately before Save; stale Save is rejected without automatic merge or draft loss.
 - [x] Clean Refresh adopts current on-disk state; dirty external changes become an explicit conflict rather than an automatic reload.
-- [ ] The UI smoke changes each field, resolves a dirty prompt, saves, observes persistent state, and demonstrates stale-save rejection.
+- [x] The UI smoke changes each field, resolves a dirty prompt, saves, observes persistent state, and demonstrates stale-save rejection.
 
-**Verification note:** Wails-free tests cover canonical Save, stale-save rejection, invalid-draft no-write behavior, and close/focus adapter seams. Native Windows startup with a valid Configuration Set passed. Native UI interaction automation remains unavailable; frontend typecheck/build passed, but the final UI interaction criterion is not claimed as native evidence.
+**Earlier verification note (superseded by the native evidence below):** Wails-free tests covered canonical Save, stale-save rejection, invalid-draft no-write behavior, and close/focus adapter seams. Native Windows startup with a valid Configuration Set passed; native interaction was not automated in that earlier run.
+
+## Comments
+
+- 2026-10-03: actual macOS Wails WebView smoke via the pinned dependency's MCP adapter changed both default names and clipboard state with input/change events, saved through the dirty-navigation dialog, asserted canonical on-disk values, and rejected a stale Save without changing externally modified bytes. Full race-enabled Go suite, vet, frontend typecheck/production build, and native desktop build passed. The temporary HOME isolated all writes from real user configuration.

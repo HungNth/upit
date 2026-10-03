@@ -4,7 +4,7 @@
 
 **Blocked by:** 02: Edit Global Configuration safely; 03: Create and edit Uploaders
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent specification:** `../spec.md`
 
@@ -21,4 +21,8 @@
 - [x] A subsequent Desktop launch classifies the created documents as valid normal state, and `upit config validate` accepts them.
 - [x] A local upload smoke through the existing CLI proves the newly created Configuration Set works outside the desktop process.
 
-**Verification note:** Setup tests and the permanent CLI smoke assert normal startup classification, `config validate`, and a successful default CLI upload against a local endpoint. Native WebView interaction was not directly automated.
+**Earlier verification note:** Setup tests and the permanent CLI smoke asserted normal startup classification, `config validate`, and successful default CLI upload against a local endpoint. The later real native Setup interaction is recorded below.
+
+## Comments
+
+- 2026-10-03: launched an actual macOS Wails WebView against a completely absent temporary Configuration Set, filled the native Setup controls with input/change events, and clicked Finish Setup. Go created canonical private documents and the UI entered normal state. Actual `bin/upit config validate` and a local HTTP CLI upload accepted exactly those UI-created documents. Full race-enabled Go suite and vet passed; no real user configuration was modified.

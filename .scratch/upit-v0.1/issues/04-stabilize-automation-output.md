@@ -6,7 +6,7 @@
 
 **Blocked by:** 03 — Enforce endpoint and extraction failure semantics
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] A successful result contains Original URL, Final URL, and HTTP status; Original URL equals Final URL in v0.1.
 - [ ] Plain success writes exactly the Final URL plus a newline to stdout and writes no status prose.
@@ -18,3 +18,7 @@
 - [ ] Output is deterministic and contains no logs, progress rendering, headers, request fields, stack traces, or secrets.
 - [ ] CLI-seam tests cover every success/error output mode, stdout/stderr separation, URL preservation, optional status-code omission, usage failures, and exact exit codes.
 - [ ] Shell demos prove command substitution for plain output and structured extraction from JSON output.
+
+## Comments
+
+- 2026-10-03 backlog audit: this ticket is dispositioned `wontfix`/`ready-for-human`. Its parent v0.1 document contract conflicts with approved v0.2/v0.3 cutovers and the no-compatibility principle. Historical version-1 behavior is not restored.

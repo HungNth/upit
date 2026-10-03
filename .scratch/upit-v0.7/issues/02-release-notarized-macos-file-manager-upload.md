@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Expose File Manager Upload through Finder Services
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent specification:** `../spec.md`
 
@@ -23,3 +23,4 @@
 - Packaging is implemented in `packaging/macos/package.sh`, `validate.sh`, `install.sh`, `uninstall.sh`, and `native-smoke.sh`; the bundle contains Desktop, the NSServices provider, and the nested Wails-free helper.
 - `.github/workflows/macos-file-manager.yml` separates unsigned PR/branch verification from protected SemVer signing, notarization, stapling, checksum, smoke, and publish jobs.
 - The signed native smoke remains pending until a protected macOS 14+ Apple Silicon runner executes it; no signing or notarization claim is made from this Windows host.
+- 2026-10-03 audit: `security find-identity -v -p codesigning` reported `0 valid identities found`. A Developer ID identity, configured notarization credentials, protected release execution, and native Finder smoke are required. No unsigned build is claimed as signed/notarized evidence; ticket 01 remains unresolved.
