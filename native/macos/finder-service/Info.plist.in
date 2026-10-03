@@ -11,7 +11,7 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Upit Finder Service</string>
+    <string>Upit</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -35,7 +35,7 @@
                 <string>Upload with Upit</string>
             </dict>
             <key>NSMessage</key>
-            <string>uploadFileService:userData:error:</string>
+            <string>uploadFileService</string>
             <key>NSPortName</key>
             <string>Upit</string>
             <key>NSSendFileTypes</key>

@@ -10,10 +10,11 @@ NSArray<NSURL *> *UpitValidatedFileURLs(NSArray<NSURL *> *urls, NSString **error
         return nil;
     }
 
-    NSURL *selectedURL = urls.firstObject;
+    // Finder sends file reference URLs (file:///.file/id=...); resolve to a path URL for the helper.
+    NSURL *selectedURL = urls.firstObject.filePathURL;
     NSNumber *isDirectory = nil;
     NSNumber *isRegularFile = nil;
-    if (!selectedURL.isFileURL ||
+    if (selectedURL == nil ||
         ![selectedURL getResourceValue:&isDirectory forKey:NSURLIsDirectoryKey error:nil] ||
         ![selectedURL getResourceValue:&isRegularFile forKey:NSURLIsRegularFileKey error:nil] ||
         isDirectory.boolValue || !isRegularFile.boolValue) {

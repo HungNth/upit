@@ -1,10 +1,14 @@
 #import <Cocoa/Cocoa.h>
 #import "selection.h"
 
-@interface UpitServiceProvider : NSObject
+@interface UpitServiceProvider : NSObject <NSApplicationDelegate>
 @end
 
 @implementation UpitServiceProvider
+
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    [NSApp setServicesProvider:self];
+}
 
 - (void)uploadFileService:(NSPasteboard *)pasteboard
                  userData:(NSString *)userData
@@ -26,7 +30,7 @@
         @"Contents/Helpers/UpitFileManager.app/Contents/MacOS/upit-file-manager"];
     if (![[NSFileManager defaultManager] isExecutableFileAtPath:helperPath]) {
         if (error != NULL) {
-            *error = @"Upit File Manager Upload is unavailable.";
+            *error = @"Upit upload is unavailable.";
         }
         return;
     }
@@ -39,7 +43,7 @@
 
     NSError *launchError = nil;
     if (![task launchAndReturnError:&launchError] && error != NULL) {
-        *error = @"Upit File Manager Upload could not start.";
+        *error = @"Upit upload could not start.";
     }
 
     [NSApp terminate:nil];
@@ -54,9 +58,6 @@ int main(int argc, const char *argv[]) {
 
         UpitServiceProvider *provider = [UpitServiceProvider new];
         [application setDelegate:provider];
-        [application registerServicesMenuSendTypes:@[NSPasteboardTypeFileURL]
-                                       returnTypes:@[]];
-        NSRegisterServicesProvider(provider, @"Upit");
         [application run];
     }
     return 0;

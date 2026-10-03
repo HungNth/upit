@@ -31,6 +31,13 @@ int main(void) {
         if (UpitValidatedFileURLs(@[fileURL, fileURL], &error) != nil) {
             return fail(@"multiple selection was accepted");
         }
+        NSURL *referenceURL = [fileURL fileReferenceURL];
+        selected = UpitValidatedFileURLs(@[referenceURL], &error);
+        if (selected.count != 1 || selected.firstObject.isFileReferenceURL ||
+            ![selected.firstObject.URLByResolvingSymlinksInPath.path
+                isEqualToString:fileURL.URLByResolvingSymlinksInPath.path]) {
+            return fail(@"Finder file reference URL was not converted to a path URL");
+        }
 
         NSURL *directoryURL = [NSURL fileURLWithPath:directory isDirectory:YES];
         if (UpitValidatedFileURLs(@[directoryURL], &error) != nil) {

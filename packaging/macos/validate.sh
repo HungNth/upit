@@ -50,13 +50,25 @@ for plist in "$root_info" "$service_info" "$file_manager_info"; do
     plutil -lint "$plist" >/dev/null
 done
 
+product_version="$(plutil -extract CFBundleShortVersionString raw -o - "$root_info")"
+build_version="$(plutil -extract CFBundleVersion raw -o - "$root_info")"
+for plist in "$root_info" "$service_info" "$file_manager_info"; do
+    if [[ "$(plutil -extract CFBundleName raw -o - "$plist")" != "Upit" ||
+          "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" != "$product_version" ||
+          "$(plutil -extract CFBundleVersion raw -o - "$plist")" != "$build_version" ||
+          "$(plutil -extract LSMinimumSystemVersion raw -o - "$plist")" != "14.0" ]]; then
+        echo "Package components must share the Upit name, version, and minimum platform." >&2
+        exit 1
+    fi
+done
+
 service_name="$(plutil -extract 'NSServices.0.NSMenuItem.default' raw -o - "$service_info")"
 if [[ "$service_name" != "Upload with Upit" ]]; then
     echo "Finder Service name is incorrect." >&2
     exit 1
 fi
 message="$(plutil -extract 'NSServices.0.NSMessage' raw -o - "$service_info")"
-if [[ "$message" != "uploadFileService:userData:error:" ]]; then
+if [[ "$message" != "uploadFileService" ]]; then
     echo "Finder Service message selector is incorrect." >&2
     exit 1
 fi
@@ -71,6 +83,11 @@ done
 for binary in "$service_binary" "$desktop_binary" "$file_manager_binary"; do
     if [[ "$(lipo -archs "$binary")" != *arm64* ]]; then
         echo "Package member is not an Apple Silicon Mach-O: $binary" >&2
+        exit 1
+    fi
+    build_info="$(vtool -show-build "$binary")"
+    if [[ ! "$build_info" =~ platform[[:space:]]+MACOS || ! "$build_info" =~ minos[[:space:]]+14\.0([[:space:]]|$) ]]; then
+        echo "Package member must target macOS 14.0: $binary" >&2
         exit 1
     fi
 done

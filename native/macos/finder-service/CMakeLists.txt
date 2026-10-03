@@ -20,7 +20,7 @@ target_link_libraries(UpitFinderSelectionTest PRIVATE "-framework Foundation")
 add_test(NAME UpitFinderSelectionTest COMMAND UpitFinderSelectionTest)
 target_link_libraries(UpitFinderService PRIVATE "-framework Cocoa")
 set_target_properties(UpitFinderService PROPERTIES
-    MACOSX_BUNDLE_BUNDLE_NAME "Upit Finder Service"
+    MACOSX_BUNDLE_BUNDLE_NAME "Upit"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.hungnth.upit.finder-service"
     MACOSX_BUNDLE_BUNDLE_VERSION "${BUILD_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${VERSION}"
