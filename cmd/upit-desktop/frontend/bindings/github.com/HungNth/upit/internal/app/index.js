@@ -4,6 +4,7 @@
 
 export {
     DesktopStartupMode,
+    IntegrationStatus,
     RepairDocumentKind
 } from "./models.js";
 
@@ -11,6 +12,10 @@ import * as $models from "./models.js";
 
 /**
  * @typedef {$models.DesktopStartupState} DesktopStartupState
+ */
+
+/**
+ * @typedef {$models.FileManagerIntegrationState} FileManagerIntegrationState
  */
 
 /**

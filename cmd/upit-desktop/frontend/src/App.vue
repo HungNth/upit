@@ -13,6 +13,8 @@ import {
   LoadRepairDocument,
   LoadShortenerEditor,
   LoadUploaderEditor,
+  FileManagerIntegrationState as LoadIntegrationState,
+  FileManagerIntegrationAction,
   PrepareManualUploadFile,
   RetryClose,
   RenameShortener,
@@ -27,6 +29,7 @@ import {
 } from '../bindings/github.com/HungNth/upit/cmd/upit-desktop/desktopservice.js'
 import type {
   DesktopStartupState,
+  FileManagerIntegrationState,
   GlobalConfigurationDraft,
   GlobalConfigurationEditorState,
   ManualUploadOptions,
@@ -41,7 +44,7 @@ import type {
   UploaderEditorState,
   UploaderExtractorDraft,
 } from '../bindings/github.com/HungNth/upit/internal/app/models.js'
-type Area = 'manual-upload' | 'global-configuration' | 'uploaders' | 'shorteners'
+type Area = 'manual-upload' | 'global-configuration' | 'uploaders' | 'shorteners' | 'file-manager-integration'
 type DirtyAction = 'navigate' | 'refresh'
 type ManualUploadProgress = {
   phase: string
@@ -55,9 +58,41 @@ const areas: Array<{ id: Area; label: string; description: string }> = [
   { id: 'global-configuration', label: 'Global Configuration', description: 'Choose defaults and clipboard behavior.' },
   { id: 'uploaders', label: 'Uploaders', description: 'Inspect available upload destinations.' },
   { id: 'shorteners', label: 'Shorteners', description: 'Inspect optional URL shortening destinations.' },
+  { id: 'file-manager-integration', label: 'File Manager Integration', description: 'Inspect installed file-manager integration.' },
 ]
 
 const activeArea = ref<Area>('manual-upload')
+const integrationState = ref<FileManagerIntegrationState | null>(null)
+const integrationError = ref('')
+const integrationLoading = ref(false)
+async function loadIntegration() {
+  if (integrationLoading.value) return
+  integrationLoading.value = true
+  integrationError.value = ''
+  try { integrationState.value = await LoadIntegrationState() }
+  catch (cause) { integrationState.value = null; integrationError.value = errorMessage(cause) }
+  finally { integrationLoading.value = false }
+}
+watch(activeArea, (area) => { if (area === 'file-manager-integration') void loadIntegration() })
+const integrationActionLabels: Record<string, string> = {
+  repair: 'Repair Integration', 'open-settings': 'Open Keyboard Settings',
+  'open-file-manager': 'Open File Manager to Verify', 'prepare-removal': 'Prepare to Remove Upit',
+}
+async function runIntegrationAction(action: string) {
+  if (integrationLoading.value) return
+  const confirmed = action !== 'prepare-removal' || window.confirm('Prepare to remove Upit? This unregisters its Finder Service and closes Desktop. Afterwards move Upit.app to Trash. Your Configuration Set is retained.')
+  if (!confirmed) return
+  integrationLoading.value = true
+  integrationError.value = ''
+  try { integrationState.value = await FileManagerIntegrationAction(action, confirmed) }
+  catch (cause) {
+    integrationState.value = null
+    integrationError.value = errorMessage(cause)
+    try { integrationState.value = await LoadIntegrationState() }
+    catch (refreshCause) { integrationError.value += ` Status refresh failed: ${errorMessage(refreshCause)}` }
+  }
+  finally { integrationLoading.value = false }
+}
 const activeAreaDetails = computed(() => areas.find((area) => area.id === activeArea.value) ?? areas[0])
 const dirtyEditorLabel = computed(() => activeArea.value === 'uploaders' ? 'Uploader' : activeArea.value === 'shorteners' ? 'Shortener' : 'Global Configuration')
 const state = ref<DesktopStartupState | null>(null)
@@ -992,7 +1027,7 @@ async function saveRepairDocument() {
 	}
 }
 function requestArea(area: Area) {
-  if (state.value?.mode !== 'normal' || area === activeArea.value) {
+  if ((state.value?.mode !== 'normal' && area !== 'file-manager-integration') || area === activeArea.value) {
     return
   }
   if (anyDirty.value) {
@@ -1094,6 +1129,7 @@ async function resolveClose(action: 'save' | 'discard' | 'cancel') {
 }
 
 const handleFocus = () => {
+	if (activeArea.value === 'file-manager-integration') { void loadIntegration(); return }
 	if (state.value?.mode !== 'normal' || anyDirty.value) return
 	if (activeArea.value === 'uploaders') {
 		void loadUploaderEditor(uploaderState.value?.draft.originalName ?? '')
@@ -1169,7 +1205,7 @@ onUnmounted(() => {
           class="nav-item"
           :class="{ active: activeArea === area.id }"
           :aria-current="activeArea === area.id ? 'page' : undefined"
-          :disabled="state?.mode !== 'normal'"
+          :disabled="state?.mode !== 'normal' && area.id !== 'file-manager-integration'"
           type="button"
           @click="requestArea(area.id)"
         >
@@ -1203,7 +1239,20 @@ onUnmounted(() => {
         <span v-if="state?.configurationPath" class="path-chip">{{ state.configurationPath }}</span>
       </header>
 
-      <section v-if="loading" class="state-card" aria-live="polite">
+      <section v-if="activeArea === 'file-manager-integration'" class="state-card" aria-labelledby="integration-title">
+        <h3 id="integration-title">File Manager Integration</h3>
+        <button v-if="state?.mode !== 'normal'" class="secondary-action" type="button" @click="activeArea = 'global-configuration'">Return to Configuration Set {{ state?.mode === 'setup' ? 'Setup' : 'Repair' }}</button>
+        <p v-if="integrationLoading" role="status">Inspecting installed integration…</p>
+        <p v-if="integrationError" role="alert">{{ integrationError }}</p>
+        <template v-if="integrationState">
+          <strong role="status" aria-live="polite">{{ integrationState.status }}</strong>
+          <p>{{ integrationState.guidance }}</p>
+          <div class="editor-actions">
+            <button v-for="action in integrationState.actions" :key="action" class="secondary-action" type="button" :disabled="integrationLoading" @click="runIntegrationAction(action)">{{ integrationActionLabels[action] }}</button>
+          </div>
+        </template>
+      </section>
+      <section v-else-if="loading" class="state-card" aria-live="polite">
         <div class="spinner" aria-hidden="true"></div>
         <h3>Loading your Configuration Set</h3>
         <p>Upit is reading and validating the fixed user configuration location.</p>
@@ -1227,7 +1276,7 @@ onUnmounted(() => {
           <input id="setup-default-shortener" v-model="setupGlobal.defaultShortener" placeholder="Leave empty until a Shortener is configured" />
           <label class="checkbox-field">
             <input v-model="setupGlobal.copyToClipboard" type="checkbox" />
-            <span>Copy Final URL to the clipboard after successful uploads</span>
+            <span>Copy Final URL after CLI and Manual Upload (File Manager Upload always copies)</span>
           </label>
           <label class="field-label" for="setup-uploader-name">First Uploader name</label>
           <input id="setup-uploader-name" v-model="setupUploader.name" placeholder="Name" />
@@ -1334,7 +1383,7 @@ onUnmounted(() => {
 
             <label class="checkbox-field">
               <input v-model="globalEditor.copyToClipboard" type="checkbox" :disabled="globalLoading" />
-              <span>Copy Final URL to the clipboard after successful uploads</span>
+              <span>Copy Final URL after CLI and Manual Upload (File Manager Upload always copies)</span>
             </label>
 
             <p v-if="globalError" id="global-config-error" class="inline-error" role="alert">{{ globalError }}</p>

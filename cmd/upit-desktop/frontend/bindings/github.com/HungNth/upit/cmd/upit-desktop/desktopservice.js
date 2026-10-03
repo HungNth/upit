@@ -65,6 +65,22 @@ export function DeleteUploader(draft) {
 }
 
 /**
+ * @param {string} action
+ * @param {boolean} confirmed
+ * @returns {$CancellablePromise<app$0.FileManagerIntegrationState>}
+ */
+export function FileManagerIntegrationAction(action, confirmed) {
+    return $Call.ByID(3216226406, action, confirmed);
+}
+
+/**
+ * @returns {$CancellablePromise<app$0.FileManagerIntegrationState>}
+ */
+export function FileManagerIntegrationState() {
+    return $Call.ByID(1421584441);
+}
+
+/**
  * @returns {$CancellablePromise<app$0.GlobalConfigurationEditorState>}
  */
 export function LoadGlobalConfigurationEditor() {

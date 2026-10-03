@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ var assets embed.FS
 
 type desktopService struct {
 	core                     app.Service
+	integration              app.FileManagerIntegrationService
 	dirty                    atomic.Bool
 	allowClose               atomic.Bool
 	manualUploadActive       atomic.Bool
@@ -29,6 +31,26 @@ type desktopService struct {
 
 func (s *desktopService) StartupState() (app.DesktopStartupState, error) {
 	return s.core.DesktopStartupState()
+}
+
+func (s *desktopService) FileManagerIntegrationState(ctx context.Context) (app.FileManagerIntegrationState, error) {
+	return s.integration.Inspect(ctx)
+}
+
+func (s *desktopService) FileManagerIntegrationAction(ctx context.Context, action string, confirmed bool) (app.FileManagerIntegrationState, error) {
+	if action == "prepare-removal" {
+		if !confirmed {
+			return app.FileManagerIntegrationState{}, fmt.Errorf("removal preparation requires confirmation")
+		}
+		if s.dirty.Load() || s.manualUploadActive.Load() {
+			return app.FileManagerIntegrationState{}, fmt.Errorf("save or discard edits and finish Manual Upload before preparing removal")
+		}
+	}
+	state, err := s.integration.Act(ctx, action)
+	if err == nil && action == "prepare-removal" {
+		s.ConfirmClose()
+	}
+	return state, err
 }
 
 func (s *desktopService) LoadGlobalConfigurationEditor() (app.GlobalConfigurationEditorState, error) {
@@ -188,12 +210,12 @@ func restoreAndFocus(window windowFocusTarget) {
 
 func main() {
 	core := app.Service{}
-	service := &desktopService{core: core}
+	service := &desktopService{core: core, integration: app.NewFileManagerIntegrationService()}
 	var window application.Window
 
 	desktop := application.New(application.Options{
-		Name:        "upit-desktop",
-		Description: "Upit Desktop",
+		Name:        "Upit",
+		Description: "Upit file uploader",
 		Services: []application.Service{
 			application.NewService(service),
 		},
@@ -216,7 +238,7 @@ func main() {
 
 	window = desktop.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "upit-desktop-main",
-		Title:            "Upit Desktop",
+		Title:            "Upit",
 		Width:            1120,
 		Height:           720,
 		MinWidth:         900,

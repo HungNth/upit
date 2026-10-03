@@ -31,6 +31,13 @@ export const DesktopStartupMode = {
  */
 
 /**
+ * @typedef {Object} FileManagerIntegrationState
+ * @property {IntegrationStatus} status
+ * @property {string} guidance
+ * @property {string[] | null} actions
+ */
+
+/**
  * @typedef {Object} GlobalConfigurationDraft
  * @property {string} revision
  * @property {string} defaultUploader
@@ -49,6 +56,22 @@ export const DesktopStartupMode = {
  * @property {string[] | null} shorteners
  * @property {boolean} shortenersPresent
  */
+
+/**
+ * @readonly
+ * @enum {string}
+ */
+export const IntegrationStatus = {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero: "",
+
+    IntegrationRegistered: "Registered",
+    IntegrationNeedsRepair: "Needs Repair",
+    IntegrationReinstall: "Reinstall Upit",
+    IntegrationUnsupported: "Not supported on Linux",
+};
 
 /**
  * ManualUploadFailure is a redacted failure suitable for desktop presentation.
