@@ -5,7 +5,7 @@ Upit is an on-demand file-upload product for interactive and automated use. Each
 ## Language
 
 **Global Configuration**:
-The per-user document that selects the default Uploader, optional default Shortener, and clipboard behavior.
+The per-user document that selects the default Uploader, optional default Shortener, and default clipboard behavior for CLI and Manual Upload. File Manager Upload has a fixed clipboard contract.
 _Avoid_: Global config, Main config, Settings
 
 **Configuration Set**:
@@ -41,5 +41,9 @@ An interactive upload initiated by a user for exactly one local file selected th
 _Avoid_: Manual upload UI, GUI upload, Desktop upload
 
 **File Manager Upload**:
-An upload initiated from Windows File Explorer or macOS Finder for exactly one selected regular file. It uses the Global Configuration defaults and completes without opening Manual Upload.
+An upload initiated from Windows File Explorer or macOS Finder for exactly one selected regular file. It uses the default Uploader and optional default Shortener from the Global Configuration, always attempts to copy the Final URL to the clipboard, and completes without opening Manual Upload.
 _Avoid_: Explorer upload, Finder upload, Shell Upload, Direct Upload
+
+**File Manager Integration**:
+The installed operating-system capability that exposes File Manager Upload from a supported file manager and is managed through Upit Desktop as part of the Upit product.
+_Avoid_: File manager app, Separate uploader app

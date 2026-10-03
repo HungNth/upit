@@ -1,0 +1,3 @@
+# Present one Upit product with private File Manager helpers
+
+Upit is installed and presented as one user-visible product with one Desktop control surface, while platform adapters and the one-shot File Manager Upload worker remain private package components that are not presented as separate user-facing applications or entry points. Desktop reports only verifiable package, bundle, and registration state; it offers explicit user-triggered repair and operating-system guidance, but never claims that Finder or Explorer currently displays the action and does not substitute a direct helper invocation for an end-to-end integration test.

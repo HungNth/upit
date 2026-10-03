@@ -10,7 +10,7 @@ Upit is a headless-first, cross-platform file uploader. `upit` streams one file 
 - JSONPath, response-header, regex, and raw-body Response Extractors
 - Optional URL shortening via named, configurable Shorteners
 - Non-interactive Configuration Management commands for reading, validating, and changing Global Configuration
-- Separate Upit Desktop with Setup, Repair, and structured Global Configuration, Uploader, and Shortener editing
+- Upit Desktop control surface with Setup, Repair, and structured Global Configuration, Uploader, and Shortener editing
 - Manual Upload for exactly one regular file from a native picker or drag-and-drop, with per-upload Uploader, Shortener, clipboard, and timeout choices
 - Manual Upload progress, cancellation, explicit Retry, Final URL copying, and nonfatal Shortener or clipboard warnings
 - Hand-written Draft 2020-12 schemas for the three Configuration Set documents
@@ -79,6 +79,16 @@ make package-macos MACOS_VERSION=0.7.0
 Upit Desktop is one single-instance window that follows the operating system light/dark preference. It uses the same fixed `~/.config/upit/` Configuration Set and Wails-free application rules as the CLI. Manual Upload accepts one regular file, supports a native picker or drag-and-drop, blocks start while Configuration Set edits are dirty, reloads configuration before execution, and retains selected inputs for explicit Retry after failure or cancellation.
 
 File Manager Upload is a separate Wails-free one-shot operation. The Windows 11 x64 package registers `Upload with Upit` in File Explorer's primary menu through a signed package-identity `IExplorerCommand`. The macOS 14+ Apple Silicon package registers the same action through a background-only `NSServices` helper under Finder Services or Quick Actions. Both adapters validate only native selection shape and pass the untrusted selection to the shared helper; Configuration Set loading, upload, notifications, clipboard actions, retry state, cancellation, and privacy-safe progress remain in the shared application module.
+
+File Manager Upload always attempts to copy the Final URL, regardless of the Global Configuration clipboard preference. Copy failure preserves the completed upload and offers `Copy Final URL` recovery without uploading again. The clipboard preference applies only to CLI and Manual Upload.
+
+Desktop includes a File Manager Integration area even while the Configuration Set requires Setup or Repair. Linux reports `Not supported on Linux` and exposes no registration or Repair actions; Manual Upload remains independent.
+
+On macOS, Desktop inspects the installed outer bundle, nested Finder Service and worker, matching bundle versions, and public Launch Services discovery. Repair is explicit; `Registered` does not assert Services enablement or Finder menu visibility. Use Keyboard Settings guidance to enable `Upload with Upit`. Before deleting the bundle, choose `Prepare to Remove Upit`, confirm unregistering the Service, then move `Upit.app` to Trash after Desktop closes. The Configuration Set is retained.
+
+On Windows, Repair requires the retained signed registration package, trusted matching signatures, and external payload hashes bound to that signed package. Missing, unsigned, untrusted, or mismatched repair material produces `Reinstall Upit`. Repair runs only after an explicit user action, in the current-user context; unsigned verification builds cannot advertise production Repair.
+
+Native Setup/Repair navigation can be checked against a Desktop built with `-tags mcp` and a disposable `HOME`: run `node cmd/upit-desktop/frontend/scripts/native-integration-smoke.mjs http://127.0.0.1:19109 setup` (or `repair`) with `WAILS_MCP_PORT=19109`. This checks the actual webview and backend; it does not replace protected Finder/Explorer release proof.
 
 The v0.6 release target is Windows 11 x64 and the v0.7 release target is macOS 14+ Apple Silicon. Windows 10 classic verbs, Windows ARM64, Intel Macs, older macOS, Mac App Store sandboxed extensions, portable registration, batch selection, queues, upload history, and resident workers remain out of scope. Signing, notarization, and publishing are permitted only from protected SemVer tags; ordinary changes receive unsigned verification artifacts.
 
@@ -321,7 +331,7 @@ Press Ctrl-C to cancel an in-flight upload.
 
 ### Clipboard
 
-Clipboard copying is disabled by default:
+CLI clipboard copying is disabled by default:
 
 ```bash
 ./bin/upit upload image.png --clipboard
