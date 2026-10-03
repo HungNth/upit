@@ -75,7 +75,7 @@ static NSUInteger upitNotificationSequence = 0;
                                              styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
                                                backing:NSBackingStoreBuffered
                                                  defer:NO];
-    self.panel.title = @"Upit — File Manager Upload";
+    self.panel.title = @"Upit";
     self.panel.level = NSFloatingWindowLevel;
     self.panel.floatingPanel = YES;
     self.panel.hidesOnDeactivate = NO;
@@ -351,7 +351,7 @@ void upitFeedbackProgress(const char *phase, int64_t processed, int64_t total) {
             body = [NSString stringWithFormat:@"%@ (%lld of %lld bytes)", body, processed, total];
         }
         if (atomic_load(&upitNotificationsAuthorized) == 1) {
-            upitPostNotification(@"Upit — File Manager Upload", body, @"com.hungnth.upit.active");
+            upitPostNotification(@"Upit", body, @"com.hungnth.upit.active");
         } else {
             upitUpdateFallback(body, processed, total);
         }
@@ -363,7 +363,7 @@ void upitFeedbackComplete(const char *summary, int copy, int retry, int openDesk
         upitStopFallback();
         atomic_store(&upitAction, 0);
         upitRegisterTerminalCategory(copy != 0, retry != 0, openDesktop != 0);
-        upitPostNotification(@"Upit — File Manager Upload", upitString(summary), @"com.hungnth.upit.terminal");
+        upitPostNotification(@"Upit", upitString(summary), @"com.hungnth.upit.terminal");
     }
 }
 

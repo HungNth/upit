@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 
@@ -17,6 +18,13 @@ func main() {
 func run(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	if len(args) == 1 && (args[0] == "--install-integration" || args[0] == "--uninstall-integration") {
+		if err := app.RunFileManagerIntegrationInstaller(ctx, args[0] == "--uninstall-integration"); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
 
 	runner := app.NewFileManagerUploadService(app.Service{})
 	switch {
