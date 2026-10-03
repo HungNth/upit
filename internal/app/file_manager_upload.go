@@ -117,7 +117,7 @@ func (s *FileManagerUploadService) upload(ctx context.Context, paths []string, p
 	emitManualUploadProgress(progress, ManualUploadProgress{Phase: "preparing"})
 	outcome, err := s.core.uploadWithSnapshot(ctx, UploadOptions{
 		FilePath:  paths[0],
-		Clipboard: ClipboardFromConfig,
+		Clipboard: ClipboardEnabled,
 	}, &expected, progress)
 	if err != nil {
 		return s.failed(ctx, paths[0], err, allowRetry)

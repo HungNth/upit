@@ -54,7 +54,7 @@ func TestFileManagerUploadRejectsAnythingExceptOneRegularFile(t *testing.T) {
 	}
 }
 
-func TestFileManagerUploadUsesDefaultsAndOpaqueCopyAction(t *testing.T) {
+func TestFileManagerUploadUsesDefaultsAndAlwaysCopies(t *testing.T) {
 	home := t.TempDir()
 	filePath := filepath.Join(home, "payload.txt")
 	if err := os.WriteFile(filePath, []byte("payload"), 0o600); err != nil {
@@ -84,11 +84,11 @@ func TestFileManagerUploadUsesDefaultsAndOpaqueCopyAction(t *testing.T) {
 	if result.Status != FileManagerUploadSucceeded || result.Failure != nil {
 		t.Fatalf("result = %#v, want success", result)
 	}
-	if len(copied) != 0 {
-		t.Fatalf("copied = %#v, want no automatic copy", copied)
+	if len(copied) != 1 || copied[0] != "https://files.example.test/result" {
+		t.Fatalf("copied = %#v, want automatic Final URL copy despite disabled preference", copied)
 	}
-	if len(result.Actions) != 1 || result.Actions[0].Kind != FileManagerActionCopyFinalURL {
-		t.Fatalf("actions = %#v, want one Copy Final URL action", result.Actions)
+	if len(result.Actions) != 0 {
+		t.Fatalf("actions = %#v, want no recovery action after successful copy", result.Actions)
 	}
 	if !slices.ContainsFunc(progress, func(update ManualUploadProgress) bool { return update.Phase == "preparing" }) ||
 		!slices.ContainsFunc(progress, func(update ManualUploadProgress) bool { return update.Phase == "response" }) {
@@ -104,15 +104,6 @@ func TestFileManagerUploadUsesDefaultsAndOpaqueCopyAction(t *testing.T) {
 		}
 	}
 
-	if _, err := runner.Dispatch(t.Context(), result.Actions[0].Token, nil); err != nil {
-		t.Fatalf("dispatch Copy Final URL: %v", err)
-	}
-	if len(copied) != 1 || copied[0] != "https://files.example.test/result" {
-		t.Fatalf("copied = %#v, want final URL", copied)
-	}
-	if _, err := runner.Dispatch(t.Context(), result.Actions[0].Token, nil); err == nil {
-		t.Fatal("dispatching consumed action succeeded, want error")
-	}
 }
 
 func TestFileManagerUploadRetryUsesFreshConfigurationExactlyOnce(t *testing.T) {
@@ -138,7 +129,10 @@ func TestFileManagerUploadRetryUsesFreshConfigurationExactlyOnce(t *testing.T) {
 	defer server.Close()
 	writeFileManagerConfiguration(t, home, server.URL, "first", "second")
 
-	runner := NewFileManagerUploadService(Service{HomeDir: func() (string, error) { return home, nil }})
+	runner := NewFileManagerUploadService(Service{
+		HomeDir:   func() (string, error) { return home, nil },
+		Clipboard: manualUploadClipboard(func(context.Context, string) error { return nil }),
+	})
 	failed := runner.Upload(t.Context(), []string{filePath}, nil)
 	if failed.Status != FileManagerUploadFailed || len(failed.Actions) != 1 || failed.Actions[0].Kind != FileManagerActionRetry {
 		t.Fatalf("failed = %#v, want one Retry action", failed)
@@ -168,8 +162,8 @@ func TestFileManagerUploadRetryUsesFreshConfigurationExactlyOnce(t *testing.T) {
 	if got := secondRequests.Load(); got != 1 {
 		t.Fatalf("second endpoint requests = %d, want 1", got)
 	}
-	if len(retried.Upload.Actions) != 1 || retried.Upload.Actions[0].Kind != FileManagerActionCopyFinalURL {
-		t.Fatalf("retry actions = %#v, want one Copy Final URL action", retried.Upload.Actions)
+	if len(retried.Upload.Actions) != 0 {
+		t.Fatalf("retry actions = %#v, want no recovery action after successful copy", retried.Upload.Actions)
 	}
 }
 
@@ -191,7 +185,10 @@ func TestFileManagerUploadRejectsConcurrentOperation(t *testing.T) {
 	defer server.Close()
 	writeFileManagerConfiguration(t, home, server.URL, "default", "")
 
-	runner := NewFileManagerUploadService(Service{HomeDir: func() (string, error) { return home, nil }})
+	runner := NewFileManagerUploadService(Service{
+		HomeDir:   func() (string, error) { return home, nil },
+		Clipboard: manualUploadClipboard(func(context.Context, string) error { return nil }),
+	})
 	firstResult := make(chan FileManagerUploadResult, 1)
 	go func() {
 		firstResult <- runner.Upload(t.Context(), []string{filePath}, nil)
@@ -223,7 +220,10 @@ func TestFileManagerUploadActionExpires(t *testing.T) {
 	defer server.Close()
 	writeFileManagerConfiguration(t, home, server.URL, "default", "")
 
-	runner := NewFileManagerUploadService(Service{HomeDir: func() (string, error) { return home, nil }})
+	runner := NewFileManagerUploadService(Service{
+		HomeDir:   func() (string, error) { return home, nil },
+		Clipboard: manualUploadClipboard(func(context.Context, string) error { return errors.New("clipboard unavailable") }),
+	})
 	runner.actionLifetime = time.Millisecond
 	result := runner.Upload(t.Context(), []string{filePath}, nil)
 	if len(result.Actions) != 1 {
@@ -249,7 +249,12 @@ func TestFileManagerUploadActionSurvivesNewServiceAndIsConsumedOnce(t *testing.T
 	var copied atomic.Int32
 	service := Service{
 		HomeDir: func() (string, error) { return home, nil },
+		// Automatic copying fails; recovery must survive a new service instance.
 		Clipboard: manualUploadClipboard(func(_ context.Context, value string) error {
+			if copied.Load() == 0 {
+				copied.Add(1)
+				return errors.New("clipboard unavailable")
+			}
 			if value != "https://files.example.test/result" {
 				t.Errorf("copied value = %q, want final URL", value)
 			}
@@ -285,8 +290,8 @@ func TestFileManagerUploadActionSurvivesNewServiceAndIsConsumedOnce(t *testing.T
 			failed++
 		}
 	}
-	if succeeded != 1 || failed != 1 || copied.Load() != 1 {
-		t.Fatalf("dispatch outcomes = succeeded %d, failed %d, copied %d; want 1, 1, 1", succeeded, failed, copied.Load())
+	if succeeded != 1 || failed != 1 || copied.Load() != 2 {
+		t.Fatalf("dispatch outcomes = succeeded %d, failed %d, copy attempts %d; want 1, 1, 2", succeeded, failed, copied.Load())
 	}
 }
 
@@ -387,23 +392,25 @@ func TestFileManagerUploadClipboardWarningIsSanitizedAndRecoverable(t *testing.T
 	if err := os.WriteFile(filePath, []byte("payload"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
 		fmt.Fprint(w, "https://files.example.test/result")
 	}))
 	defer server.Close()
 	writeFileManagerConfiguration(t, home, server.URL, "default", "")
-	if err := os.WriteFile(filepath.Join(home, ".config", "upit", "config.json"), []byte(`{
-  "version": 2,
-  "defaultUploader": "default",
-  "defaultShortener": "",
-  "copyToClipboard": true
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	var copyAttempts int
 	runner := NewFileManagerUploadService(Service{
 		HomeDir: func() (string, error) { return home, nil },
-		Clipboard: manualUploadClipboard(func(context.Context, string) error {
-			return errors.New("clipboard contains private endpoint")
+		Clipboard: manualUploadClipboard(func(_ context.Context, value string) error {
+			copyAttempts++
+			if copyAttempts == 1 {
+				return errors.New("clipboard contains private endpoint")
+			}
+			if value != "https://files.example.test/result" {
+				t.Fatalf("recovery copied %q, want existing Final URL", value)
+			}
+			return nil
 		}),
 	})
 	result := runner.Upload(t.Context(), []string{filePath}, nil)
@@ -419,6 +426,17 @@ func TestFileManagerUploadClipboardWarningIsSanitizedAndRecoverable(t *testing.T
 	}
 	if strings.Contains(string(serialized), "private endpoint") || strings.Contains(string(serialized), server.URL) {
 		t.Fatalf("serialized result leaks private warning data: %s", serialized)
+	}
+	for _, name := range []string{"config.json", "custom-uploader.json"} {
+		if err := os.Remove(filepath.Join(home, ".config", "upit", name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runner.Dispatch(t.Context(), result.Actions[0].Token, nil); err != nil {
+		t.Fatalf("recover existing result without Configuration Set: %v", err)
+	}
+	if requests.Load() != 1 || copyAttempts != 2 {
+		t.Fatalf("requests = %d, copy attempts = %d; want 1 and 2", requests.Load(), copyAttempts)
 	}
 }
 
@@ -458,9 +476,16 @@ func TestFileManagerUploadShortenerFallbackIsSanitized(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := NewFileManagerUploadService(Service{HomeDir: func() (string, error) { return home, nil }}).Upload(t.Context(), []string{filePath}, nil)
+	var copied string
+	result := NewFileManagerUploadService(Service{
+		HomeDir:   func() (string, error) { return home, nil },
+		Clipboard: manualUploadClipboard(func(_ context.Context, value string) error { copied = value; return nil }),
+	}).Upload(t.Context(), []string{filePath}, nil)
 	if result.Status != FileManagerUploadSucceeded || len(result.Warnings) != 1 || result.Warnings[0] != "URL shortening was unavailable; the Original URL was retained" {
 		t.Fatalf("result = %#v, want sanitized Shortener fallback", result)
+	}
+	if copied != "https://files.example.test/original" {
+		t.Fatalf("copied = %q, want Original URL retained as Final URL", copied)
 	}
 	serialized, err := json.Marshal(result)
 	if err != nil {
