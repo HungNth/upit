@@ -32,3 +32,16 @@ make build-desktop
 ```
 
 The generated `bindings/` files are committed and must not be edited manually.
+
+## Native dialog regression
+
+Rename and Delete use in-app Vue dialogs, not `window.prompt` or `window.confirm`: the pinned macOS WebView returns immediately from those JavaScript APIs without presenting a usable native dialog. The in-app dialogs preserve exact names for Go validation, retain diagnostics after failure, close after successful publication, and manage initial focus, Tab containment, Escape cancellation, and focus restoration.
+
+To check the real WebView, build the production frontend, then compile a separate smoke binary with `go build -tags mcp`. Launch it with an isolated temporary `HOME` containing valid documents and unreferenced disposable definitions named `upit-smoke-uploader` and `upit-smoke-shortener`; the disposable Uploader must start with a JSON URL extractor and a valid non-empty JSONPath. Set `WAILS_MCP_PORT=19099` and wait for the normal Configuration Set state; do not run against a real user Configuration Set. MCP is compiled out of ordinary production builds.
+
+```bash
+node cmd/upit-desktop/frontend/scripts/native-dialog-smoke.mjs \
+    http://127.0.0.1:19099 upit-smoke-uploader upit-smoke-shortener
+```
+
+This destructive check edits, renames, and deletes only the supplied `upit-smoke-*` definitions. It proves JSON-to-body transitions for both URL and error extractors save without incompatible hidden fields, verifies both lifecycle dialogs through native WebView events and Go publication, rejects whitespace-bearing names without normalization, checks successful close and Delete confirmation, and asserts accessible control names, validation associations, Tab containment, and initial/restored focus. It does not prove Finder/Explorer integration, OS picker/drop delivery, signing, notarization, or other-platform runtime behavior.

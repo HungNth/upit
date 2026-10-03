@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Events } from '@wailsio/runtime'
 import {
   CancelManualUpload,
@@ -39,6 +39,7 @@ import type {
   ShortenerEditorState,
   UploaderEditorDraft,
   UploaderEditorState,
+  UploaderExtractorDraft,
 } from '../bindings/github.com/HungNth/upit/internal/app/models.js'
 type Area = 'manual-upload' | 'global-configuration' | 'uploaders' | 'shorteners'
 type DirtyAction = 'navigate' | 'refresh'
@@ -162,6 +163,166 @@ const shortenerLoading = ref(false)
 const shortenerError = ref('')
 const pendingShortener = ref<string | null>(null)
 const shortenerDirty = computed(() => Boolean(shortenerState.value) && shortenerSaved.value !== JSON.stringify(shortenerState.value?.draft))
+const renameDialog = reactive<{
+  open: boolean
+  kind: 'uploader' | 'shortener'
+  currentName: string
+  newName: string
+  error: string
+  loading: boolean
+}>({
+  open: false,
+  kind: 'uploader',
+  currentName: '',
+  newName: '',
+  error: '',
+  loading: false,
+})
+const renameInputRef = ref<HTMLInputElement | null>(null)
+const renameDialogRef = ref<HTMLElement | null>(null)
+const deleteCancelRef = ref<HTMLButtonElement | null>(null)
+const deleteDialogRef = ref<HTMLElement | null>(null)
+const dirtyDialogRef = ref<HTMLElement | null>(null)
+const dirtyCancelRef = ref<HTMLButtonElement | null>(null)
+const manualCloseDialogRef = ref<HTMLElement | null>(null)
+const manualCloseCancelRef = ref<HTMLButtonElement | null>(null)
+const closeDialogRef = ref<HTMLElement | null>(null)
+const closeCancelRef = ref<HTMLButtonElement | null>(null)
+let lastFocusedElement: HTMLElement | null = null
+let lastModalFocusedElement: HTMLElement | null = null
+
+function trapDialogTab(e: KeyboardEvent, container: HTMLElement | null) {
+  if (e.key !== 'Tab' || !container) return
+  const focusable = container.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )
+  if (focusable.length === 0) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
+function onRenameDialogKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (!renameDialog.loading) closeRenameDialog()
+    return
+  }
+  trapDialogTab(e, renameDialogRef.value)
+}
+
+function onDeleteDialogKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (!deleteDialog.loading) closeDeleteDialog()
+    return
+  }
+  trapDialogTab(e, deleteDialogRef.value)
+}
+
+function onDirtyDialogKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    resolveDirtyAction('cancel')
+    return
+  }
+  trapDialogTab(e, dirtyDialogRef.value)
+}
+
+function onManualCloseDialogKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    void resolveManualUploadClose('cancel')
+    return
+  }
+  trapDialogTab(e, manualCloseDialogRef.value)
+}
+
+function onCloseDialogKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    resolveClose('cancel')
+    return
+  }
+  trapDialogTab(e, closeDialogRef.value)
+}
+
+watch(
+  dirtyAction,
+  async (action) => {
+    if (action) {
+      lastModalFocusedElement = document.activeElement as HTMLElement | null
+      await nextTick()
+      dirtyCancelRef.value?.focus()
+    } else {
+      await nextTick()
+      lastModalFocusedElement?.focus()
+      lastModalFocusedElement = null
+    }
+  },
+)
+
+
+watch(
+  closeRequested,
+  async (requested) => {
+    if (requested) {
+      lastModalFocusedElement = document.activeElement as HTMLElement | null
+      await nextTick()
+      closeCancelRef.value?.focus()
+    } else {
+      await nextTick()
+      lastModalFocusedElement?.focus()
+      lastModalFocusedElement = null
+    }
+  },
+)
+
+watch(
+  () => renameDialog.open,
+  async (open) => {
+    if (open) {
+      lastFocusedElement = document.activeElement as HTMLElement | null
+      await nextTick()
+      renameInputRef.value?.focus()
+      renameInputRef.value?.select()
+    } else {
+      await nextTick()
+      lastFocusedElement?.focus()
+      lastFocusedElement = null
+    }
+  },
+)
+
+const deleteDialog = reactive<{
+  open: boolean
+  kind: 'uploader' | 'shortener'
+  name: string
+  error: string
+  loading: boolean
+}>({
+  open: false,
+  kind: 'uploader',
+  name: '',
+  error: '',
+  loading: false,
+})
+
+watch(
+  () => deleteDialog.open,
+  async (open) => {
+    if (open) {
+      lastFocusedElement = document.activeElement as HTMLElement | null
+      await nextTick()
+      deleteCancelRef.value?.focus()
+    } else {
+      await nextTick()
+      lastFocusedElement?.focus()
+      lastFocusedElement = null
+    }
+  },
+)
 const manualFile = ref<ManualUploadSelection | null>(null)
 const manualUploaderChoice = ref('default')
 const manualShortenerChoice = ref('default')
@@ -173,6 +334,20 @@ const manualNotice = ref('')
 const manualResult = ref<ManualUploadResult | null>(null)
 const manualProgress = ref<ManualUploadProgress | null>(null)
 const manualCloseRequested = ref(false)
+watch(
+  manualCloseRequested,
+  async (requested) => {
+    if (requested) {
+      lastModalFocusedElement = document.activeElement as HTMLElement | null
+      await nextTick()
+      manualCloseCancelRef.value?.focus()
+    } else {
+      await nextTick()
+      lastModalFocusedElement?.focus()
+      lastModalFocusedElement = null
+    }
+  },
+)
 const anyDirty = computed(() => globalDirty.value || uploaderDirty.value || shortenerDirty.value)
 const manualReady = computed(() => Boolean(
   state.value?.mode === 'normal'
@@ -383,45 +558,27 @@ async function saveUploaderEditor() {
 	}
 }
 
-async function renameUploader() {
+function renameUploader() {
 	if (!uploaderState.value?.draft.originalName) {
 		return
 	}
-	const newName = window.prompt('Rename Uploader', uploaderState.value.draft.originalName)
-	if (!newName || newName === uploaderState.value.draft.originalName) {
-		return
-	}
-	uploaderLoading.value = true
-	uploaderError.value = ''
-	try {
-		applyUploaderEditor(await RenameUploader({
-			revision: uploaderState.value.revision,
-			originalName: uploaderState.value.draft.originalName,
-			newName,
-		}))
-	} catch (cause) {
-		uploaderError.value = errorMessage(cause)
-	} finally {
-		uploaderLoading.value = false
-	}
+	renameDialog.kind = 'uploader'
+	renameDialog.currentName = uploaderState.value.draft.originalName
+	renameDialog.newName = uploaderState.value.draft.originalName
+	renameDialog.error = ''
+	renameDialog.loading = false
+	renameDialog.open = true
 }
 
-async function deleteUploader() {
-	if (!uploaderState.value?.draft.originalName || !window.confirm(`Delete Uploader "${uploaderState.value.draft.originalName}"?`)) {
+function deleteUploader() {
+	if (!uploaderState.value?.draft.originalName) {
 		return
 	}
-	uploaderLoading.value = true
-	uploaderError.value = ''
-	try {
-		applyUploaderEditor(await DeleteUploader({
-			revision: uploaderState.value.revision,
-			name: uploaderState.value.draft.originalName,
-		}))
-	} catch (cause) {
-		uploaderError.value = errorMessage(cause)
-	} finally {
-		uploaderLoading.value = false
-	}
+	deleteDialog.kind = 'uploader'
+	deleteDialog.name = uploaderState.value.draft.originalName
+	deleteDialog.error = ''
+	deleteDialog.loading = false
+	deleteDialog.open = true
 }
 
 function applyShortenerEditor(loaded: ShortenerEditorState) {
@@ -479,44 +636,122 @@ function selectShortener(name: string) {
 	void loadShortenerEditor(name)
 }
 
-async function renameShortener() {
+function renameShortener() {
 	if (!shortenerState.value?.draft.originalName) {
 		return
 	}
-	const newName = window.prompt('Rename Shortener', shortenerState.value.draft.originalName)
-	if (!newName || newName === shortenerState.value.draft.originalName) {
+	renameDialog.kind = 'shortener'
+	renameDialog.currentName = shortenerState.value.draft.originalName
+	renameDialog.newName = shortenerState.value.draft.originalName
+	renameDialog.error = ''
+	renameDialog.loading = false
+	renameDialog.open = true
+}
+
+function deleteShortener() {
+	if (!shortenerState.value?.draft.originalName) {
 		return
 	}
-	shortenerLoading.value = true
-	shortenerError.value = ''
+	deleteDialog.kind = 'shortener'
+	deleteDialog.name = shortenerState.value.draft.originalName
+	deleteDialog.error = ''
+	deleteDialog.loading = false
+	deleteDialog.open = true
+}
+
+function closeRenameDialog() {
+	if (renameDialog.loading) return
+	renameDialog.open = false
+	renameDialog.error = ''
+}
+
+async function submitRename() {
+	const newName = renameDialog.newName
+	if (!newName.trim()) {
+		renameDialog.error = 'Name cannot be empty'
+		return
+	}
+	if (newName === renameDialog.currentName) {
+		renameDialog.open = false
+		renameDialog.error = ''
+		return
+	}
+	renameDialog.loading = true
+	renameDialog.error = ''
 	try {
-		applyShortenerEditor(await RenameShortener({
-			revision: shortenerState.value.revision,
-			originalName: shortenerState.value.draft.originalName,
-			newName,
-		}))
+		if (renameDialog.kind === 'uploader') {
+			if (!uploaderState.value) return
+			uploaderLoading.value = true
+			try {
+				applyUploaderEditor(await RenameUploader({
+					revision: uploaderState.value.revision,
+					originalName: renameDialog.currentName,
+					newName,
+				}))
+			} finally {
+				uploaderLoading.value = false
+			}
+		} else {
+			if (!shortenerState.value) return
+			shortenerLoading.value = true
+			try {
+				applyShortenerEditor(await RenameShortener({
+					revision: shortenerState.value.revision,
+					originalName: renameDialog.currentName,
+					newName,
+				}))
+			} finally {
+				shortenerLoading.value = false
+			}
+		}
+		renameDialog.open = false
+		renameDialog.error = ''
 	} catch (cause) {
-		shortenerError.value = errorMessage(cause)
+		renameDialog.error = errorMessage(cause)
 	} finally {
-		shortenerLoading.value = false
+		renameDialog.loading = false
 	}
 }
 
-async function deleteShortener() {
-	if (!shortenerState.value?.draft.originalName || !window.confirm(`Delete Shortener "${shortenerState.value.draft.originalName}"?`)) {
-		return
-	}
-	shortenerLoading.value = true
-	shortenerError.value = ''
+function closeDeleteDialog() {
+	if (deleteDialog.loading) return
+	deleteDialog.open = false
+	deleteDialog.error = ''
+}
+
+async function submitDelete() {
+	deleteDialog.loading = true
+	deleteDialog.error = ''
 	try {
-		applyShortenerEditor(await DeleteShortener({
-			revision: shortenerState.value.revision,
-			name: shortenerState.value.draft.originalName,
-		}))
+		if (deleteDialog.kind === 'uploader') {
+			if (!uploaderState.value) return
+			uploaderLoading.value = true
+			try {
+				applyUploaderEditor(await DeleteUploader({
+					revision: uploaderState.value.revision,
+					name: deleteDialog.name,
+				}))
+			} finally {
+				uploaderLoading.value = false
+			}
+		} else {
+			if (!shortenerState.value) return
+			shortenerLoading.value = true
+			try {
+				applyShortenerEditor(await DeleteShortener({
+					revision: shortenerState.value.revision,
+					name: deleteDialog.name,
+				}))
+			} finally {
+				shortenerLoading.value = false
+			}
+		}
+		deleteDialog.open = false
+		deleteDialog.error = ''
 	} catch (cause) {
-		shortenerError.value = errorMessage(cause)
+		deleteDialog.error = errorMessage(cause)
 	} finally {
-		shortenerLoading.value = false
+		deleteDialog.loading = false
 	}
 }
 function selectUploader(name: string) {
@@ -621,6 +856,44 @@ function toggleShortenerError(enabled: boolean) {
 
 function onShortenerErrorToggle(event: Event) {
 	toggleShortenerError(event.target instanceof HTMLInputElement && event.target.checked)
+}
+
+function resetExtractorFields(extractor: UploaderExtractorDraft, type: string) {
+	extractor.type = type
+	if (type === 'body') {
+		extractor.path = ''
+		extractor.header = ''
+		extractor.pattern = ''
+		extractor.group = ''
+	} else if (type === 'json') {
+		extractor.header = ''
+		extractor.pattern = ''
+		extractor.group = ''
+	} else if (type === 'header') {
+		extractor.path = ''
+		extractor.pattern = ''
+		extractor.group = ''
+	} else if (type === 'regex') {
+		extractor.path = ''
+		extractor.header = ''
+	}
+}
+
+function changeUploaderExtractor(event: Event) {
+	if (!uploaderState.value) return
+	const type = (event.target as HTMLSelectElement).value
+	resetExtractorFields(uploaderState.value.draft.response.url, type)
+}
+
+function changeUploaderErrorExtractor(event: Event) {
+	if (!uploaderState.value?.draft.response.error) return
+	const type = (event.target as HTMLSelectElement).value
+	resetExtractorFields(uploaderState.value.draft.response.error, type)
+}
+
+function changeSetupExtractor(event: Event) {
+	const type = (event.target as HTMLSelectElement).value
+	resetExtractorFields(setupUploader.response.url, type)
 }
 
 function onErrorToggle(event: Event) {
@@ -947,7 +1220,7 @@ onUnmounted(() => {
         <p class="eyebrow">First run</p>
         <h3>Create your Configuration Set</h3>
         <p>Finish creates the fixed configuration directory and one valid Uploader. Nothing is written while this draft is incomplete.</p>
-        <form class="editor-form" @submit.prevent="finishSetup">
+        <form class="editor-form" :aria-describedby="setupError ? 'setup-error' : undefined" @submit.prevent="finishSetup">
           <label class="field-label" for="setup-default-uploader">Default Uploader name</label>
           <input id="setup-default-uploader" v-model="setupGlobal.defaultUploader" placeholder="Name" />
           <label class="field-label" for="setup-default-shortener">Default Shortener (optional)</label>
@@ -975,25 +1248,25 @@ onUnmounted(() => {
           <section v-if="setupUploader.request.body === 'multipart' || setupUploader.request.body === 'form'" class="map-editor">
             <div class="map-heading"><h4>Request fields</h4><button class="secondary-action" type="button" @click="addSetupField">Add</button></div>
             <div v-for="(entry, index) in setupUploader.request.fields" :key="`setup-field-${index}`" class="map-row">
-              <input v-model="entry.key" placeholder="Field name" />
-              <input v-model="entry.value" placeholder="Value or {input}" />
+              <input v-model="entry.key" aria-label="Field key" placeholder="Field name" />
+              <input v-model="entry.value" aria-label="Field value" placeholder="Value or {input}" />
               <button class="icon-action" type="button" @click="removeSetupField(index)">Remove</button>
             </div>
           </section>
           <p v-if="setupUploader.request.body === 'json'" class="muted-copy">JSON data must contain exactly one full-string {input} placeholder.</p>
-          <select id="setup-response-type" v-model="setupUploader.response.url.type">
+          <select id="setup-response-type" :value="setupUploader.response.url.type" aria-label="Response URL extractor type" @change="changeSetupExtractor">
             <option value="" disabled>Select an extractor</option>
             <option value="body">body</option>
             <option value="json">json</option>
             <option value="header">header</option>
             <option value="regex">regex</option>
           </select>
-          <input v-if="setupUploader.response.url.type === 'json'" v-model="setupUploader.response.url.path" placeholder="JSONPath" />
-          <input v-if="setupUploader.response.url.type === 'header'" v-model="setupUploader.response.url.header" placeholder="Response header" />
-          <input v-if="setupUploader.response.url.type === 'regex'" v-model="setupUploader.response.url.pattern" placeholder="RE2 pattern" />
-          <input v-if="setupUploader.response.url.type === 'regex'" v-model="setupUploader.response.url.group" placeholder="Group (optional)" />
-          <textarea v-if="setupUploader.request.body === 'json'" v-model="setupUploader.request.dataJSON" rows="6" placeholder='{"content":"{input}"}'></textarea>
-          <p v-if="setupError" class="inline-error" role="alert">{{ setupError }}</p>
+          <input v-if="setupUploader.response.url.type === 'json'" v-model="setupUploader.response.url.path" aria-label="Response URL JSONPath" placeholder="JSONPath" />
+          <input v-if="setupUploader.response.url.type === 'header'" v-model="setupUploader.response.url.header" aria-label="Response URL header name" placeholder="Response header" />
+          <input v-if="setupUploader.response.url.type === 'regex'" v-model="setupUploader.response.url.pattern" aria-label="Response URL RE2 pattern" placeholder="RE2 pattern" />
+          <input v-if="setupUploader.response.url.type === 'regex'" v-model="setupUploader.response.url.group" aria-label="Response URL regex group" placeholder="Group (optional)" />
+          <textarea v-if="setupUploader.request.body === 'json'" v-model="setupUploader.request.dataJSON" aria-label="JSON request data template" rows="6" placeholder='{"content":"{input}"}'></textarea>
+          <p v-if="setupError" id="setup-error" class="inline-error" role="alert">{{ setupError }}</p>
           <button class="primary-action" type="submit" :disabled="!setupReady || setupLoading">Finish Setup</button>
         </form>
       </section>
@@ -1047,7 +1320,7 @@ onUnmounted(() => {
             <span v-else class="ready-badge">Saved</span>
           </div>
           <p>Choose the defaults used by later uploads. Changes stay in memory until you save them.</p>
-          <form class="editor-form" @submit.prevent="saveGlobalEditor">
+          <form class="editor-form" :aria-describedby="globalError ? 'global-config-error' : undefined" @submit.prevent="saveGlobalEditor">
             <label class="field-label" for="default-uploader">Default Uploader</label>
             <select id="default-uploader" v-model="globalEditor.defaultUploader" :disabled="globalLoading">
               <option v-for="name in globalEditor.uploaders" :key="name" :value="name">{{ name }}</option>
@@ -1064,7 +1337,7 @@ onUnmounted(() => {
               <span>Copy Final URL to the clipboard after successful uploads</span>
             </label>
 
-            <p v-if="globalError" class="inline-error" role="alert">{{ globalError }}</p>
+            <p v-if="globalError" id="global-config-error" class="inline-error" role="alert">{{ globalError }}</p>
             <p v-if="globalNotice" class="inline-success" role="status">{{ globalNotice }}</p>
             <div class="editor-actions">
               <button class="primary-action" type="submit" :disabled="!globalDirty || globalLoading">Save</button>
@@ -1099,7 +1372,7 @@ onUnmounted(() => {
               <button class="secondary-action" type="button" :disabled="uploaderLoading" @click="newUploader">New Uploader</button>
             </aside>
 
-            <form v-if="uploaderState" class="editor-form uploader-form" @submit.prevent="saveUploaderEditor">
+            <form v-if="uploaderState" class="editor-form uploader-form" :aria-describedby="uploaderError ? 'uploader-error' : undefined" @submit.prevent="saveUploaderEditor">
               <label class="field-label" for="uploader-name">Name</label>
               <input id="uploader-name" v-model="uploaderState.draft.name" :disabled="Boolean(uploaderState.draft.originalName) || uploaderLoading" />
 
@@ -1148,16 +1421,16 @@ onUnmounted(() => {
 
               <section class="map-editor">
                 <h4>Response URL extractor</h4>
-                <select v-model="uploaderState.draft.response.url.type" :disabled="uploaderLoading">
+                <select :value="uploaderState.draft.response.url.type" aria-label="Response URL extractor type" :disabled="uploaderLoading" @change="changeUploaderExtractor">
                   <option value="json">json</option>
                   <option value="header">header</option>
                   <option value="regex">regex</option>
                   <option value="body">body</option>
                 </select>
-                <input v-if="uploaderState.draft.response.url.type === 'json'" v-model="uploaderState.draft.response.url.path" placeholder="JSONPath" :disabled="uploaderLoading" />
-                <input v-if="uploaderState.draft.response.url.type === 'header'" v-model="uploaderState.draft.response.url.header" placeholder="Response header" :disabled="uploaderLoading" />
-                <input v-if="uploaderState.draft.response.url.type === 'regex'" v-model="uploaderState.draft.response.url.pattern" placeholder="RE2 pattern" :disabled="uploaderLoading" />
-                <input v-if="uploaderState.draft.response.url.type === 'regex'" v-model="uploaderState.draft.response.url.group" placeholder="Group (optional)" :disabled="uploaderLoading" />
+                <input v-if="uploaderState.draft.response.url.type === 'json'" v-model="uploaderState.draft.response.url.path" aria-label="Response URL JSONPath" placeholder="JSONPath" :disabled="uploaderLoading" />
+                <input v-if="uploaderState.draft.response.url.type === 'header'" v-model="uploaderState.draft.response.url.header" aria-label="Response URL header name" placeholder="Response header" :disabled="uploaderLoading" />
+                <input v-if="uploaderState.draft.response.url.type === 'regex'" v-model="uploaderState.draft.response.url.pattern" aria-label="Response URL RE2 pattern" placeholder="RE2 pattern" :disabled="uploaderLoading" />
+                <input v-if="uploaderState.draft.response.url.type === 'regex'" v-model="uploaderState.draft.response.url.group" aria-label="Response URL regex group" placeholder="Group (optional)" :disabled="uploaderLoading" />
               </section>
 
               <section class="map-editor">
@@ -1166,20 +1439,20 @@ onUnmounted(() => {
                   <span>Configure response error extractor</span>
                 </label>
                 <template v-if="uploaderState.draft.response.error">
-                  <select v-model="uploaderState.draft.response.error.type" :disabled="uploaderLoading">
+                  <select :value="uploaderState.draft.response.error.type" aria-label="Response error extractor type" :disabled="uploaderLoading" @change="changeUploaderErrorExtractor">
                     <option value="json">json</option>
                     <option value="header">header</option>
                     <option value="regex">regex</option>
                     <option value="body">body</option>
                   </select>
-                  <input v-if="uploaderState.draft.response.error.type === 'json'" v-model="uploaderState.draft.response.error.path" placeholder="JSONPath" :disabled="uploaderLoading" />
-                  <input v-if="uploaderState.draft.response.error.type === 'header'" v-model="uploaderState.draft.response.error.header" placeholder="Response header" :disabled="uploaderLoading" />
-                  <input v-if="uploaderState.draft.response.error.type === 'regex'" v-model="uploaderState.draft.response.error.pattern" placeholder="RE2 pattern" :disabled="uploaderLoading" />
-                  <input v-if="uploaderState.draft.response.error.type === 'regex'" v-model="uploaderState.draft.response.error.group" placeholder="Group (optional)" :disabled="uploaderLoading" />
+                  <input v-if="uploaderState.draft.response.error.type === 'json'" v-model="uploaderState.draft.response.error.path" aria-label="Response error JSONPath" placeholder="JSONPath" :disabled="uploaderLoading" />
+                  <input v-if="uploaderState.draft.response.error.type === 'header'" v-model="uploaderState.draft.response.error.header" aria-label="Response error header name" placeholder="Response header" :disabled="uploaderLoading" />
+                  <input v-if="uploaderState.draft.response.error.type === 'regex'" v-model="uploaderState.draft.response.error.pattern" aria-label="Response error RE2 pattern" placeholder="RE2 pattern" :disabled="uploaderLoading" />
+                  <input v-if="uploaderState.draft.response.error.type === 'regex'" v-model="uploaderState.draft.response.error.group" aria-label="Response error regex group" placeholder="Group (optional)" :disabled="uploaderLoading" />
                 </template>
               </section>
 
-              <p v-if="uploaderError" class="inline-error" role="alert">{{ uploaderError }}</p>
+              <p v-if="uploaderError" id="uploader-error" class="inline-error" role="alert">{{ uploaderError }}</p>
               <div class="editor-actions">
                 <button class="primary-action" type="submit" :disabled="!uploaderDirty || uploaderLoading">Save Uploader</button>
                 <button class="secondary-action" type="button" :disabled="uploaderLoading" @click="requestRefresh">Refresh</button>
@@ -1214,7 +1487,7 @@ onUnmounted(() => {
               <button class="secondary-action" type="button" :disabled="shortenerLoading" @click="newShortener">New Shortener</button>
             </aside>
 
-            <form v-if="shortenerState" class="editor-form uploader-form" @submit.prevent="saveShortenerEditor">
+            <form v-if="shortenerState" class="editor-form uploader-form" :aria-describedby="shortenerError ? 'shortener-error' : undefined" @submit.prevent="saveShortenerEditor">
               <label class="field-label" for="shortener-name">Name</label>
               <input id="shortener-name" v-model="shortenerState.draft.name" :disabled="Boolean(shortenerState.draft.originalName) || shortenerLoading" />
               <label class="field-label" for="shortener-method">HTTP method</label>
@@ -1239,15 +1512,15 @@ onUnmounted(() => {
               <textarea id="shortener-data" v-model="shortenerState.draft.request.dataJSON" rows="8" spellcheck="false" :disabled="shortenerLoading"></textarea>
               <section class="map-editor">
                 <h4>Response URL extractor (JSON only)</h4>
-                <input v-model="shortenerState.draft.response.url.path" placeholder="JSONPath" :disabled="shortenerLoading" />
+                <input v-model="shortenerState.draft.response.url.path" aria-label="Shortener response URL JSONPath" placeholder="JSONPath" :disabled="shortenerLoading" />
                 <label class="checkbox-field">
                   <input type="checkbox" :checked="Boolean(shortenerState.draft.response.error)" :disabled="shortenerLoading" @change="onShortenerErrorToggle" />
                   <span>Configure provider error extractor</span>
                 </label>
-                <input v-if="shortenerState.draft.response.error" v-model="shortenerState.draft.response.error.path" placeholder="Error JSONPath" :disabled="shortenerLoading" />
+                <input v-if="shortenerState.draft.response.error" v-model="shortenerState.draft.response.error.path" aria-label="Shortener provider error JSONPath" placeholder="Error JSONPath" :disabled="shortenerLoading" />
               </section>
 
-              <p v-if="shortenerError" class="inline-error" role="alert">{{ shortenerError }}</p>
+              <p v-if="shortenerError" id="shortener-error" class="inline-error" role="alert">{{ shortenerError }}</p>
               <div class="editor-actions">
                 <button class="primary-action" type="submit" :disabled="!shortenerDirty || shortenerLoading">Save Shortener</button>
                 <button class="secondary-action" type="button" :disabled="shortenerLoading" @click="requestRefresh">Refresh</button>
@@ -1267,7 +1540,7 @@ onUnmounted(() => {
             <span v-else class="ready-badge">Ready</span>
           </div>
           <p>Choose one regular file or drop it below. Your Configuration Set stays unchanged.</p>
-          <form class="editor-form manual-upload-form" @submit.prevent="startManualUpload">
+          <form class="editor-form manual-upload-form" :aria-describedby="manualError ? 'manual-upload-error' : undefined" @submit.prevent="startManualUpload">
             <section id="manual-upload-drop" class="manual-upload-drop" data-file-drop-target>
               <strong>{{ manualFile ? manualFile.name : 'Drop one file here' }}</strong>
               <span v-if="manualFile">{{ manualFile.path }} · {{ manualFile.size.toLocaleString() }} bytes</span>
@@ -1299,7 +1572,7 @@ onUnmounted(() => {
             <input id="manual-timeout" v-model="manualTimeout" placeholder="30s or 10m" :disabled="manualLoading" />
 
             <p v-if="anyDirty" class="muted-copy" role="status">Save or discard Configuration Set edits before uploading.</p>
-            <p v-if="manualError" class="inline-error" role="alert">{{ manualError }}</p>
+            <p v-if="manualError" id="manual-upload-error" class="inline-error" role="alert">{{ manualError }}</p>
 
             <template v-if="manualResult?.success">
               <section class="manual-upload-result inline-success" role="status">
@@ -1326,38 +1599,79 @@ onUnmounted(() => {
           </form>
         </article>
       </section>
-      <div v-if="dirtyAction" class="modal-backdrop" role="presentation">
-        <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="dirty-dialog-title">
+      <div v-if="dirtyAction" class="modal-backdrop" role="presentation" @keydown="onDirtyDialogKeydown">
+        <section ref="dirtyDialogRef" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="dirty-dialog-title">
           <p class="eyebrow">Unsaved changes</p>
           <h3 id="dirty-dialog-title">Save {{ dirtyEditorLabel }} changes?</h3>
           <p>Your current edits are not saved. Save them before {{ dirtyAction === 'navigate' ? 'leaving this area' : 'refreshing' }}?</p>
           <div class="editor-actions">
             <button class="primary-action" type="button" @click="resolveDirtyAction('save')">Save</button>
             <button class="secondary-action" type="button" @click="resolveDirtyAction('discard')">Discard</button>
-            <button class="secondary-action" type="button" @click="resolveDirtyAction('cancel')">Cancel</button>
+            <button ref="dirtyCancelRef" class="secondary-action" type="button" @click="resolveDirtyAction('cancel')">Cancel</button>
           </div>
         </section>
       </div>
-      <div v-if="manualCloseRequested" class="modal-backdrop" role="presentation">
-        <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-close-dialog-title">
+      <div v-if="manualCloseRequested" class="modal-backdrop" role="presentation" @keydown="onManualCloseDialogKeydown">
+        <section ref="manualCloseDialogRef" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-close-dialog-title">
           <p class="eyebrow">Manual Upload active</p>
           <h3 id="manual-close-dialog-title">Cancel upload and close?</h3>
           <p>Closing cancels the active upload and waits for its resources to be released.</p>
           <div class="editor-actions">
             <button class="primary-action" type="button" @click="resolveManualUploadClose('confirm')">Cancel upload and close</button>
-            <button class="secondary-action" type="button" @click="resolveManualUploadClose('cancel')">Keep uploading</button>
+            <button ref="manualCloseCancelRef" class="secondary-action" type="button" @click="resolveManualUploadClose('cancel')">Keep uploading</button>
           </div>
         </section>
       </div>
-      <div v-if="closeRequested" class="modal-backdrop" role="presentation">
-        <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="close-dialog-title">
+      <div v-if="closeRequested" class="modal-backdrop" role="presentation" @keydown="onCloseDialogKeydown">
+        <section ref="closeDialogRef" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="close-dialog-title">
           <p class="eyebrow">Close Upit Desktop</p>
           <h3 id="close-dialog-title">Save {{ dirtyEditorLabel }} changes?</h3>
           <p>Your current edits are not saved. Choose Save, Discard, or Cancel before closing.</p>
           <div class="editor-actions">
             <button class="primary-action" type="button" @click="resolveClose('save')">Save</button>
             <button class="secondary-action" type="button" @click="resolveClose('discard')">Discard</button>
-            <button class="secondary-action" type="button" @click="resolveClose('cancel')">Cancel</button>
+            <button ref="closeCancelRef" class="secondary-action" type="button" @click="resolveClose('cancel')">Cancel</button>
+          </div>
+        </section>
+      </div>
+      <div v-if="renameDialog.open" class="modal-backdrop" role="presentation" @keydown="onRenameDialogKeydown">
+        <section ref="renameDialogRef" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-dialog-title">
+          <p class="eyebrow">Rename {{ renameDialog.kind === 'uploader' ? 'Uploader' : 'Shortener' }}</p>
+          <h3 id="rename-dialog-title">Rename "{{ renameDialog.currentName }}"</h3>
+          <form class="editor-form" :aria-describedby="renameDialog.error ? 'rename-dialog-error' : undefined" @submit.prevent="submitRename">
+            <label class="field-label" for="rename-input">New name</label>
+            <input
+              id="rename-input"
+              ref="renameInputRef"
+              v-model="renameDialog.newName"
+              :disabled="renameDialog.loading"
+              required
+            />
+            <p v-if="renameDialog.error" id="rename-dialog-error" class="inline-error" role="alert">{{ renameDialog.error }}</p>
+            <div class="editor-actions">
+              <button class="primary-action" type="submit" :disabled="renameDialog.loading || !renameDialog.newName.trim()">
+                {{ renameDialog.loading ? 'Renaming…' : 'Rename' }}
+              </button>
+              <button class="secondary-action" type="button" :disabled="renameDialog.loading" @click="closeRenameDialog">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+      <div v-if="deleteDialog.open" class="modal-backdrop" role="presentation" @keydown="onDeleteDialogKeydown">
+        <section ref="deleteDialogRef" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" :aria-describedby="deleteDialog.error ? 'delete-dialog-error' : undefined">
+          <p class="eyebrow">Confirm deletion</p>
+          <h3 id="delete-dialog-title">Delete {{ deleteDialog.kind === 'uploader' ? 'Uploader' : 'Shortener' }} "{{ deleteDialog.name }}"?</h3>
+          <p>This action removes the definition. Unreferenced definitions are permanently deleted upon confirmation.</p>
+          <p v-if="deleteDialog.error" id="delete-dialog-error" class="inline-error" role="alert">{{ deleteDialog.error }}</p>
+          <div class="editor-actions">
+            <button class="primary-action" type="button" :disabled="deleteDialog.loading" @click="submitDelete">
+              {{ deleteDialog.loading ? 'Deleting…' : 'Delete' }}
+            </button>
+            <button ref="deleteCancelRef" class="secondary-action" type="button" :disabled="deleteDialog.loading" @click="closeDeleteDialog">
+              Cancel
+            </button>
           </div>
         </section>
       </div>

@@ -111,6 +111,99 @@ func TestManualUploadUsesDefaultsAndExplicitOverrides(t *testing.T) {
 		t.Fatalf("invalid timeout result = %#v, want validation failure", invalidTimeout)
 	}
 }
+func TestManualUploadFailureFallbackAndWarningVariants(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/success":
+			fmt.Fprint(w, "https://files.example.test/original")
+		case "/structured-fail":
+			w.WriteHeader(http.StatusBadGateway)
+			fmt.Fprint(w, "gateway error")
+		case "/shorten-fail":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	home := t.TempDir()
+	configDir := filepath.Join(home, ".config", "upit")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{
+  "version": 2,
+  "defaultUploader": "base",
+  "defaultShortener": "fallback-short",
+  "copyToClipboard": true
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "custom-uploader.json"), []byte(fmt.Sprintf(`{
+  "version": 2,
+  "uploaders": {
+    "base": {"request": {"method": "POST", "url": %q, "body": "binary"}, "response": {"url": {"type": "body"}}},
+    "failing": {"request": {"method": "POST", "url": %q, "body": "binary"}, "response": {"url": {"type": "body"}}}
+  }
+}`, server.URL+"/success", server.URL+"/structured-fail")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "custom-shortener.json"), []byte(fmt.Sprintf(`{
+  "version": 1,
+  "shorteners": {
+    "fallback-short": {"request": {"method": "POST", "url": %q, "data": {"url": "{input}"}}, "response": {"url": {"type": "json", "path": "$.url"}}}
+  }
+}`, server.URL+"/shorten-fail")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(home, "file.txt")
+	if err := os.WriteFile(filePath, []byte("variant tests"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var clipboardAttempts int
+	service := Service{
+		HomeDir: func() (string, error) { return home, nil },
+		Clipboard: manualUploadClipboard(func(_ context.Context, _ string) error {
+			clipboardAttempts++
+			return fmt.Errorf("clipboard unavailable")
+		}),
+	}
+
+	// 1. Shortener fallback + clipboard warning
+	fallbackResult := service.ManualUpload(t.Context(), ManualUploadOptions{FilePath: filePath})
+	if !fallbackResult.Success || fallbackResult.Failure != nil {
+		t.Fatalf("fallbackResult = %#v, want success", fallbackResult)
+	}
+	if fallbackResult.OriginalURL != "https://files.example.test/original" || fallbackResult.FinalURL != fallbackResult.OriginalURL {
+		t.Fatalf("fallbackResult URLs = %q, %q, want original == final", fallbackResult.OriginalURL, fallbackResult.FinalURL)
+	}
+	if len(fallbackResult.Warnings) != 2 {
+		t.Fatalf("warnings = %#v, want shortener and clipboard warnings", fallbackResult.Warnings)
+	}
+	if !strings.Contains(fallbackResult.Warnings[0], "shorten URL") || !strings.Contains(fallbackResult.Warnings[1], "clipboard") {
+		t.Fatalf("unexpected warning order or messages: %#v", fallbackResult.Warnings)
+	}
+
+	// 2. Structured endpoint failure
+	failResult := service.ManualUpload(t.Context(), ManualUploadOptions{FilePath: filePath, Uploader: "failing"})
+	if failResult.Success || failResult.Failure == nil {
+		t.Fatalf("failResult = %#v, want structured failure", failResult)
+	}
+	if failResult.Failure.Stage != "response" || failResult.Failure.StatusCode != http.StatusBadGateway {
+		t.Fatalf("failResult.Failure = %#v, want response stage and 502 status", failResult.Failure)
+	}
+
+	// 3. Explicit retry after correcting configuration / options
+	retryResult := service.ManualUpload(t.Context(), ManualUploadOptions{FilePath: filePath, Uploader: "base", DisableShortening: true, Clipboard: "disabled"})
+	if !retryResult.Success || retryResult.Failure != nil {
+		t.Fatalf("retryResult = %#v, want success on retry", retryResult)
+	}
+	if retryResult.FinalURL != "https://files.example.test/original" || len(retryResult.Warnings) != 0 {
+		t.Fatalf("retryResult = %#v, want clean direct upload", retryResult)
+	}
+}
 
 func TestManualUploadRedactsSelectedFilePathFromFailure(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "private-upload.txt")
