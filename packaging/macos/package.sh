@@ -141,7 +141,7 @@ validate_args=(--app "$app")
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     validate_args+=(--require-signature)
 fi
-"$SOURCE_ROOT/packaging/macos/validate.sh" "${validate_args[@]}"
+bash "$SOURCE_ROOT/packaging/macos/validate.sh" "${validate_args[@]}"
 
 image_root="$work_directory/dmg-root"
 mkdir -p "$image_root"

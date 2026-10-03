@@ -1,6 +1,6 @@
-# macOS File Manager Upload
+# Upit for macOS
 
-The v0.7 macOS integration targets **macOS 14 or newer on Apple Silicon**. It is distributed outside the Mac App Store as a Developer ID-signed, Hardened Runtime, notarized, and stapled disk image.
+Upit targets **macOS 14 or newer on Apple Silicon**. One application contains Desktop and private File Manager Integration components. Production distribution requires a Developer ID-signed, Hardened Runtime, notarized, and stapled disk image.
 
 ## Bundle layout
 
@@ -27,14 +27,12 @@ The output is an unsigned verification DMG under `dist/macos/`. The package scri
 
 ## Installation and removal
 
-Mount the DMG, then register the app and Service explicitly:
+1. Mount the DMG and drag `Upit.app` onto the Applications shortcut. No shell script is required.
+2. Open Upit. File Manager Integration performs a non-mutating inspection; use **Repair Integration** if registration is absent or stale.
+3. Verify **Upload with Upit** from Finder Services or Quick Actions. If necessary, enable it in **System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders**. Desktop cannot observe that private preference or promise live menu visibility.
+4. Before removing the application, choose **Prepare to Remove Upit** in Desktop and confirm. After the Service and outer app are unregistered and Desktop closes, move `Upit.app` to Trash. Your Configuration Set remains intact.
 
-```bash
-packaging/macos/install.sh --app /Volumes/Upit\ 0.7.0/Upit.app
-packaging/macos/uninstall.sh
-```
-
-Launch Services registration is automatic through `lsregister`. macOS user preferences can still require enabling **System Settings → Keyboard → Keyboard Shortcuts → Services → Files and Folders**. The installer prints that path.
+`install.sh` and `uninstall.sh` are internal native-smoke helpers, not the consumer installation/removal flow.
 
 ## Protected release
 

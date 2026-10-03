@@ -7,7 +7,7 @@ usage() {
     cat <<'EOF'
 Usage: packaging/macos/uninstall.sh [--install-directory PATH]
 
-Unregisters the Upit Finder Service and removes the installed Upit.app bundle.
+Internal native-smoke rollback helper. The consumer removal flow is Desktop's Prepare to Remove Upit followed by moving Upit.app to Trash.
 EOF
 }
 
