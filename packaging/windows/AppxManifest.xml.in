@@ -15,6 +15,9 @@
     <Logo>assets/logo.png</Logo>
     <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
   </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
   <Resources>
     <Resource Language="en-us" />
   </Resources>
@@ -31,7 +34,7 @@
         </desktop4:Extension>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:SurrogateServer DisplayName="Upit Explorer Command">
+            <com:SurrogateServer DisplayName="Upit">
               <com:Class Id="{5C4A83F8-4D35-4C0C-B25B-2A57FDDA8BB4}" Path="upit-explorer-command.dll" ThreadingModel="both" />
             </com:SurrogateServer>
           </com:ComServer>

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)] [string] $PackagePath,
+    [Parameter(Mandatory = $true)] [string] $InstallerPath,
     [Parameter(Mandatory = $true)] [string] $InstallDirectory,
     [string] $EvidencePath = (Join-Path (Get-Location) 'native-smoke-evidence.json')
 )
@@ -11,18 +11,18 @@ $ErrorActionPreference = 'Stop'
 $os = Get-CimInstance Win32_OperatingSystem
 if ([int]$os.BuildNumber -lt 22000) { throw "Windows 11 build required; received $($os.BuildNumber)." }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw "Windows x64 runner required; received $env:PROCESSOR_ARCHITECTURE." }
-if (-not (Test-Path $PackagePath -PathType Leaf)) { throw "Signed package not found: $PackagePath" }
-
-$payloadNames = @('upit-desktop.exe', 'upit-file-manager.exe', 'upit-explorer-command.dll')
-$payloadRoot = Resolve-Path $InstallDirectory
+if (-not (Test-Path $InstallerPath -PathType Leaf)) { throw "Signed installer not found: $InstallerPath" }
+if ((Get-AuthenticodeSignature -LiteralPath $InstallerPath).Status -ne 'Valid') { throw 'The consumer installer signature is not trusted.' }
+if (Test-Path 'HKCU:\Software\Upit') { throw 'This smoke requires a clean dedicated runner with no existing Upit consumer installation.' }
+$installer = Start-Process -FilePath $InstallerPath -ArgumentList "/S /D=$InstallDirectory" -PassThru -Wait
+if ($installer.ExitCode -ne 0) { throw "Consumer installer failed with exit code $($installer.ExitCode)." }
+$payloadRoot = (Get-ItemProperty 'HKCU:\Software\Upit').PayloadPath
+$payloadNames = @('upit.exe', 'upit-desktop.exe', 'upit-file-manager.exe', 'upit-explorer-command.dll', 'repair\Upit.msix')
 foreach ($name in $payloadNames) {
-    $path = Join-Path $payloadRoot $name
-    if (-not (Test-Path $path -PathType Leaf)) { throw "External-location payload is missing $name." }
+    if (-not (Test-Path (Join-Path $payloadRoot $name) -PathType Leaf)) { throw "Installed product is missing $name." }
 }
-if (-not (Test-Path (Join-Path $payloadRoot 'upit.exe') -PathType Leaf)) { throw 'External-location payload is missing upit.exe for CLI continuity smoke.' }
-& (Join-Path $PSScriptRoot 'install.ps1') -PackagePath $PackagePath -InstallDirectory $payloadRoot
 $installed = Get-AppxPackage -Name 'HungNth.Upit'
-if ($null -eq $installed) { throw 'Package identity was not registered.' }
+if ($null -eq $installed) { throw 'Consumer installation did not register package identity.' }
 $manifest = [xml](Get-AppxPackageManifest -Package $installed.PackageFullName)
 $extension = $manifest.Package.Applications.Application.Extensions.Extension |
     Where-Object { $_.Category -eq 'windows.fileExplorerContextMenus' }
@@ -118,10 +118,12 @@ try {
     }
     if ($helper.ExitCode -ne 0) { throw "One-shot helper exited with code $($helper.ExitCode)." }
     $requestCount = @(Get-Content $requestLog | Where-Object { $_ -eq 'REQUEST' }).Count
-    if ($requestCount -lt 1) { throw 'The local endpoint received no helper request.' }
+    if ($requestCount -ne 1) { throw "The one-shot upload received $requestCount requests, expected one." }
     $automated.helperUpload = $true
     $automated.endpointRequests = $requestCount
     $automated.helperExited = $true
+    if ((Get-Clipboard -Raw).Trim() -ne 'https://files.example.test/native-smoke') { throw 'File Manager Upload did not copy the Final URL with the preference disabled.' }
+    $automated.alwaysCopy = $true
 
     $cli = Start-Process -FilePath (Join-Path $payloadRoot 'upit.exe') -ArgumentList '--help' -PassThru -Wait -NoNewWindow
     if ($cli.ExitCode -ne 0) { throw "CLI help exited with code $($cli.ExitCode)." }
@@ -138,6 +140,11 @@ try {
         foldersAndMultiSelectionHidden = 'folder and multi-selection command suppression observed'
         lifecycle = 'success, warning, cancellation, Retry, Copy, and configuration recovery observed'
         noDesktopWindow = 'Upit Desktop did not open during direct upload'
+        integrationStatusAndRepair = 'Desktop reported truthful integration status; removing registration then choosing Repair restored it without elevation'
+        unsafeRepairFailsClosed = 'missing, unsigned, untrusted, and mismatched repair inputs produced Reinstall Upit without registration changes'
+        clipboardRecoveryWithoutReupload = 'clipboard failure preserved success and Copy Final URL reused the existing URL without another endpoint request'
+        atomicUpdate = 'a signed product update preserved one identity and did not duplicate Explorer commands'
+        manualAndCLIContinuity = 'Manual Upload and a CLI upload worked against the same Configuration Set'
     }
     foreach ($name in $checks.Keys) {
         $answer = Read-Host "Type YES after: $($checks[$name])"
@@ -146,8 +153,8 @@ try {
     }
 
     $evidence = [ordered]@{
-        package = (Split-Path $PackagePath -Leaf)
-        packageSha256 = (Get-FileHash -Algorithm SHA256 $PackagePath).Hash.ToLowerInvariant()
+        installer = (Split-Path $InstallerPath -Leaf)
+        installerSha256 = (Get-FileHash -Algorithm SHA256 $InstallerPath).Hash.ToLowerInvariant()
         osBuild = $os.BuildNumber
         architecture = $env:PROCESSOR_ARCHITECTURE
         automated = $automated
@@ -156,7 +163,6 @@ try {
         operator = [Environment]::UserName
         machine = [Environment]::MachineName
     }
-    $evidence | ConvertTo-Json -Depth 5 | Set-Content -Path $EvidencePath -Encoding UTF8
 } finally {
     Remove-Item Env:UPIT_FILE_MANAGER_HEADLESS -ErrorAction SilentlyContinue
     if ($null -ne $serverJob) {
@@ -174,6 +180,9 @@ try {
         }
     }
     Remove-Item $configBackup -Recurse -Force -ErrorAction SilentlyContinue
-    & (Join-Path $PSScriptRoot 'uninstall.ps1')
+    $uninstaller = Start-Process -FilePath (Join-Path $InstallDirectory 'Uninstall.exe') -ArgumentList '/S' -PassThru -Wait
+    if ($uninstaller.ExitCode -ne 0) { throw 'Consumer uninstall failed; retained payload requires manual recovery.' }
     if (Get-AppxPackage -Name 'HungNth.Upit') { throw 'Uninstall left package identity or Explorer registration behind.' }
+    $automated.uninstallRegistrationClean = $true
 }
+$evidence | ConvertTo-Json -Depth 5 | Set-Content -Path $EvidencePath -Encoding UTF8

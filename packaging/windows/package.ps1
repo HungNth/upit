@@ -46,6 +46,8 @@ $cmake = $cmakeCommand.Source
 $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("upit-msix-" + [guid]::NewGuid().ToString('N'))
 $nativeBuild = Join-Path ([System.IO.Path]::GetTempPath()) ("upit-explorer-command-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
+$installerPayload = Join-Path ([System.IO.Path]::GetTempPath()) ("upit-installer-payload-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $installerPayload -Force | Out-Null
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 try {
     & $cmake -S (Join-Path $SourceRoot 'native\windows\explorer-command') -B $nativeBuild
@@ -59,6 +61,7 @@ try {
     $required = @(
         (Join-Path $SourceRoot 'bin\upit-desktop.exe'),
         (Join-Path $SourceRoot 'bin\upit-file-manager.exe'),
+        (Join-Path $SourceRoot 'bin\upit.exe'),
         $nativeOutput,
         (Join-Path $PSScriptRoot 'assets\logo.png')
     )
@@ -75,13 +78,14 @@ try {
 
     Copy-Item (Join-Path $SourceRoot 'bin\upit-desktop.exe') $stage
     Copy-Item (Join-Path $SourceRoot 'bin\upit-file-manager.exe') $stage
+    Copy-Item (Join-Path $SourceRoot 'bin\upit.exe') $stage
     Copy-Item $nativeOutput $stage
     New-Item -ItemType Directory -Path (Join-Path $stage 'assets') -Force | Out-Null
     Copy-Item (Join-Path $PSScriptRoot 'assets\logo.png') (Join-Path $stage 'assets\logo.png')
 
     $manifest = (Get-Content (Join-Path $PSScriptRoot 'AppxManifest.xml.in') -Raw).
         Replace('@VERSION@', $Version).
-        Replace('@PUBLISHER@', $Publisher)
+        Replace('@PUBLISHER@', [System.Security.SecurityElement]::Escape($Publisher))
     if ($manifest.Contains('@VERSION@') -or $manifest.Contains('@PUBLISHER@')) {
         throw 'Manifest replacement left unresolved placeholders.'
     }
@@ -111,7 +115,17 @@ try {
         Copy-Item $nativeOutput (Join-Path $stage 'upit-explorer-command.dll') -Force
 		Copy-Item (Join-Path $SourceRoot 'bin\upit-desktop.exe') $stage -Force
 		Copy-Item (Join-Path $SourceRoot 'bin\upit-file-manager.exe') $stage -Force
+        Copy-Item (Join-Path $SourceRoot 'bin\upit.exe') $stage -Force
     }
+
+    $payloadHashes = @{}
+    foreach ($name in @('upit.exe', 'upit-desktop.exe', 'upit-file-manager.exe', 'upit-explorer-command.dll')) {
+        $file = Join-Path $stage $name
+        $payloadHashes[$name] = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+        Copy-Item -LiteralPath $file -Destination $installerPayload
+        Remove-Item -LiteralPath $file
+    }
+    $payloadHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'payload-sha256.json') -Encoding UTF8
 
     $packagePath = Join-Path $OutputDirectory ("upit-windows-x64-$Version.msix")
     & $makeAppx pack /d $stage /p $packagePath /nv
@@ -124,8 +138,23 @@ try {
 
     $hash = (Get-FileHash -Algorithm SHA256 $packagePath).Hash.ToLowerInvariant()
     Set-Content -Path "$packagePath.sha256" -Value "$hash  $(Split-Path $packagePath -Leaf)" -Encoding ASCII
-    Write-Output $packagePath
+    New-Item -ItemType Directory -Path (Join-Path $installerPayload 'repair') -Force | Out-Null
+    Copy-Item -LiteralPath $packagePath -Destination (Join-Path $installerPayload 'repair\Upit.msix')
+    $makensis = Get-Command makensis.exe -ErrorAction Stop
+    $installerPath = Join-Path $OutputDirectory ("upit-windows-x64-$Version-setup.exe")
+    & $makensis.Source "/DUPIT_VERSION=$Version" "/DUPIT_PAYLOAD=$installerPayload" "/DUPIT_OUTPUT=$installerPath" (Join-Path $PSScriptRoot 'installer.nsi')
+    if ($LASTEXITCODE -ne 0) { throw "NSIS installer compilation failed with exit code $LASTEXITCODE." }
+    if ($CertificatePath) {
+        & $signTool @signArgs $installerPath
+        if ($LASTEXITCODE -ne 0) { throw "Installer signing failed with exit code $LASTEXITCODE." }
+    }
+    $installerHash = (Get-FileHash -Algorithm SHA256 $installerPath).Hash.ToLowerInvariant()
+    Set-Content -Path "$installerPath.sha256" -Value "$installerHash  $(Split-Path $installerPath -Leaf)" -Encoding ASCII
+    @{ name='Upit'; version=$Version; platform='windows'; architecture='x64'; signed=[bool]$CertificatePath; registrationArtifact=(Split-Path $packagePath -Leaf); installer=(Split-Path $installerPath -Leaf) } |
+        ConvertTo-Json | Set-Content -LiteralPath "$installerPath.metadata.json" -Encoding UTF8
+    Write-Output $installerPath
 } finally {
     if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
     if (Test-Path $nativeBuild) { Remove-Item $nativeBuild -Recurse -Force }
+    if (Test-Path $installerPayload) { Remove-Item $installerPayload -Recurse -Force }
 }
