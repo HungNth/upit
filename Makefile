@@ -109,16 +109,21 @@ build-darwin: build-darwin-amd64 build-darwin-arm64
 build-macos: export GOOS := darwin
 build-macos: export GOARCH := arm64
 build-macos: export CGO_ENABLED := 1
+build-macos: export MACOSX_DEPLOYMENT_TARGET := 14.0
+build-macos: export CGO_CFLAGS := $(CGO_CFLAGS) -mmacosx-version-min=14.0
+build-macos: export CGO_CXXFLAGS := $(CGO_CXXFLAGS) -mmacosx-version-min=14.0
+build-macos: export CGO_LDFLAGS := $(CGO_LDFLAGS) -mmacosx-version-min=14.0
+build-macos: export GOFLAGS := $(GOFLAGS) -ldflags=-extldflags=-mmacosx-version-min=14.0
 build-macos: build-desktop
 	go build -o "$(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64" $(CMD_DIR)
 
 ## package-macos: Build an unsigned or protected signed/notarized macOS package
 package-macos: build-macos
-	packaging/macos/package.sh --version "$(MACOS_VERSION)" $(if $(MACOS_SIGNING_IDENTITY),--signing-identity "$(MACOS_SIGNING_IDENTITY)",) $(if $(MACOS_NOTARY_PROFILE),--notary-profile "$(MACOS_NOTARY_PROFILE)",) $(if $(MACOS_PROTECTED_TAG),--protected-tag "$(MACOS_PROTECTED_TAG)",)
+	bash packaging/macos/package.sh --version "$(MACOS_VERSION)" $(if $(MACOS_SIGNING_IDENTITY),--signing-identity "$(MACOS_SIGNING_IDENTITY)",) $(if $(MACOS_NOTARY_PROFILE),--notary-profile "$(MACOS_NOTARY_PROFILE)",) $(if $(MACOS_PROTECTED_TAG),--protected-tag "$(MACOS_PROTECTED_TAG)",)
 
 ## validate-macos: Validate an extracted Upit.app bundle
 validate-macos:
-	packaging/macos/validate.sh --app "$(MACOS_APP)" $(if $(MACOS_REQUIRE_SIGNATURE),--require-signature,)
+	bash packaging/macos/validate.sh --app "$(MACOS_APP)" $(if $(MACOS_REQUIRE_SIGNATURE),--require-signature,)
 
 
 build-all: build-windows build-linux build-darwin

@@ -1,4 +1,4 @@
-name: Windows File Manager Upload
+name: Upit Windows
 
 on:
   pull_request:
@@ -30,6 +30,13 @@ jobs:
           cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm --prefix cmd/upit-desktop/frontend ci
+      - name: Install NSIS build tool
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
+      - name: Build CLI for the unified payload
+        run: make build
       - name: Build desktop and one-shot helper
         run: make build-desktop
       - name: Run Go tests
@@ -79,6 +86,11 @@ jobs:
           cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm --prefix cmd/upit-desktop/frontend ci
+      - name: Install NSIS build tool
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
       - name: Build desktop and one-shot helper
         run: make build-desktop
       - name: Build CLI for continuity smoke
@@ -102,46 +114,27 @@ jobs:
             -Publisher $env:UPIT_MSIX_PUBLISHER `
             -CertificatePath (Join-Path $env:RUNNER_TEMP 'upit-signing.pfx') `
             -CertificatePassword $env:UPIT_WINDOWS_CERTIFICATE_PASSWORD
-      - name: Verify signature and hosted package registration cleanup
+      - name: Verify signed consumer installation and cleanup
         shell: pwsh
         run: |
-          $package = Get-ChildItem dist/windows -Filter '*.msix' | Select-Object -First 1
-          $payload = @('upit.exe', 'upit-desktop.exe', 'upit-file-manager.exe', 'upit-explorer-command.dll')
-          foreach ($name in $payload) {
-            $path = Join-Path (Resolve-Path bin) $name
-            if (-not (Test-Path $path -PathType Leaf)) { throw "External-location payload is missing $name." }
+          $installer = Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1
+          if ($null -eq $installer -or (Get-AuthenticodeSignature $installer.FullName).Status -ne 'Valid') { throw 'Trusted consumer installer is missing.' }
+          $root = Join-Path $env:RUNNER_TEMP 'Upit'
+          $process = Start-Process $installer.FullName -ArgumentList "/S /D=$root" -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw 'Consumer installation failed.' }
+          $payload = (Get-ItemProperty 'HKCU:\Software\Upit').PayloadPath
+          foreach ($name in @('upit.exe','upit-desktop.exe','upit-file-manager.exe','upit-explorer-command.dll','repair\Upit.msix')) {
+            if ((Get-AuthenticodeSignature (Join-Path $payload $name)).Status -ne 'Valid') { throw "Untrusted installed payload: $name" }
           }
-          $signTool = (Get-Command signtool.exe -ErrorAction Stop).Source
-          & $signTool verify /pa /all $package.FullName
-          if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for MSIX with exit code $LASTEXITCODE." }
-          foreach ($name in $payload) {
-            & $signTool verify /pa /all (Join-Path (Resolve-Path bin) $name)
-            if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for $name with exit code $LASTEXITCODE." }
-          }
-          .\packaging\windows\install.ps1 -PackagePath $package.FullName -InstallDirectory (Resolve-Path bin)
-          $installed = Get-AppxPackage -Name 'HungNth.Upit'
-          if ($null -eq $installed) { throw 'Signed package did not register package identity.' }
-          $manifest = [xml](Get-AppxPackageManifest -Package $installed.PackageFullName)
-          if (-not $manifest.Package.Applications.Application.Extensions.Extension) { throw 'Installed package has no extension registration.' }
-          .\packaging\windows\uninstall.ps1
-          if (Get-AppxPackage -Name 'HungNth.Upit') { throw 'Uninstall left package registration behind.' }
-      - name: Create signed external payload bundle
-        shell: pwsh
-        run: |
-          $payload = "dist/windows/upit-windows-x64-payload-$env:GITHUB_REF_NAME.zip"
-          Compress-Archive -Path bin/upit.exe,bin/upit-desktop.exe,bin/upit-file-manager.exe,bin/upit-explorer-command.dll -DestinationPath $payload -Force
-          $hash = (Get-FileHash -Algorithm SHA256 $payload).Hash.ToLowerInvariant()
-          Set-Content -Path "$payload.sha256" -Value "$hash  $(Split-Path $payload -Leaf)" -Encoding ASCII
-      - name: Upload signed package and payload for protected smoke
+          if ($null -eq (Get-AppxPackage -Name 'HungNth.Upit')) { throw 'Consumer installation did not register package identity.' }
+          Remove-ItemProperty 'HKCU:\Software\Upit' -Name PayloadPath
+          $process = Start-Process (Join-Path $root 'Uninstall.exe') -ArgumentList '/S' -PassThru -Wait
+          if ($process.ExitCode -ne 0 -or (Get-AppxPackage -Name 'HungNth.Upit')) { throw 'Consumer uninstall did not remove registration.' }
+      - name: Upload signed consumer installer for protected smoke
         uses: actions/upload-artifact@v4
         with:
           name: upit-windows-x64-signed-${{ github.run_id }}
-          path: |
-            dist/windows/
-            bin/upit.exe
-            bin/upit-desktop.exe
-            bin/upit-file-manager.exe
-            bin/upit-explorer-command.dll
+          path: dist/windows/
 
   native-smoke:
     name: Protected Windows 11 x64 Explorer smoke
@@ -154,14 +147,14 @@ jobs:
     steps:
       - name: Checkout protected tag
         uses: actions/checkout@v4
-      - name: Download signed package and payload
+      - name: Download signed consumer installer
         uses: actions/download-artifact@v4
         with:
           name: upit-windows-x64-signed-${{ github.run_id }}
-          path: .
+          path: dist/windows/
       - name: Run interactive Windows 11 Explorer smoke
         shell: pwsh
-        run: .\packaging\windows\native-smoke.ps1 -PackagePath (Get-ChildItem dist/windows -Filter '*.msix' | Select-Object -First 1).FullName -InstallDirectory (Resolve-Path bin)
+        run: .\packaging\windows\native-smoke.ps1 -InstallerPath (Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1).FullName -InstallDirectory (Join-Path $env:RUNNER_TEMP 'Upit')
       - name: Upload protected native smoke evidence
         uses: actions/upload-artifact@v4
         with:
@@ -180,24 +173,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: upit-windows-x64-signed-${{ github.run_id }}
-          path: .
-      - name: Verify and publish package, payload, and checksums
+          path: dist/windows/
+      - name: Verify and publish the one-product installer
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $package = Get-ChildItem dist/windows -Filter '*.msix' | Select-Object -First 1
-          if ($null -eq $package) { throw 'MSIX package is missing from signed artifact.' }
-          $checksum = Get-Item "$($package.FullName).sha256" -ErrorAction Stop
-          $payload = Get-ChildItem dist/windows -Filter '*-payload-*.zip' | Select-Object -First 1
-          if ($null -eq $payload) { throw 'External payload archive is missing from signed artifact.' }
-          $payloadChecksum = Get-Item "$($payload.FullName).sha256" -ErrorAction Stop
-          $expectedPackageHash = ((Get-Content $checksum.FullName -Raw) -split '\s+')[0]
-          $actualPackageHash = (Get-FileHash -Algorithm SHA256 $package.FullName).Hash.ToLowerInvariant()
-          if ($expectedPackageHash -ne $actualPackageHash) { throw 'MSIX checksum does not match its checksum file.' }
-          $payload = Get-ChildItem dist/windows -Filter '*payload*.zip' | Select-Object -First 1
-          $payloadChecksum = Get-Item "$($payload.FullName).sha256"
-          $expectedPayloadHash = ((Get-Content $payloadChecksum.FullName -Raw) -split '\s+')[0]
-          $actualPayloadHash = (Get-FileHash -Algorithm SHA256 $payload.FullName).Hash.ToLowerInvariant()
-          if ($expectedPayloadHash -ne $actualPayloadHash) { throw 'External payload checksum does not match its checksum file.' }
-          gh release create $env:GITHUB_REF_NAME $package.FullName $checksum.FullName $payload.FullName $payloadChecksum.FullName --verify-tag --generate-notes
+          $installer = Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'Consumer installer is missing from the signed artifact.' }
+          $checksum = Get-Item "$($installer.FullName).sha256" -ErrorAction Stop
+          $metadata = Get-Item "$($installer.FullName).metadata.json" -ErrorAction Stop
+          $expected = ((Get-Content $checksum.FullName -Raw) -split '\s+')[0]
+          $actual = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw 'Installer checksum does not match.' }
+          gh release create $env:GITHUB_REF_NAME $installer.FullName $checksum.FullName $metadata.FullName --verify-tag --generate-notes

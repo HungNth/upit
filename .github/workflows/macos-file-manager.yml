@@ -173,9 +173,9 @@ jobs:
       - name: Run interactive macOS Finder smoke
         run: |
           artifact=$(find dist/macos -name '*.dmg' -type f | head -n 1)
-          packaging/macos/native-smoke.sh \
+          bash packaging/macos/native-smoke.sh \
             --app "$RUNNER_TEMP/upit-mounted/Upit.app" \
-            --install-directory "$RUNNER_TEMP/upit-install" \
+            --install-directory "$HOME/Applications" \
             --cli "$(pwd)/bin/upit-darwin-arm64" \
             --evidence native-smoke-evidence.json \
             --require-signature
