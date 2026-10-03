@@ -40,7 +40,6 @@
             <string>Upit</string>
             <key>NSSendFileTypes</key>
             <array>
-                <string>public.file-url</string>
                 <string>public.item</string>
             </array>
             <key>NSRequiredContext</key>

@@ -72,6 +72,12 @@ if [[ "$message" != "uploadFileService" ]]; then
     echo "Finder Service message selector is incorrect." >&2
     exit 1
 fi
+# Any extra URL type (e.g. public.file-url) makes System Settings list the service under Internet.
+send_file_types="$(plutil -extract 'NSServices.0.NSSendFileTypes' json -o - "$service_info" 2>/dev/null || true)"
+if [[ "$send_file_types" != '["public.item"]' ]]; then
+    echo "Finder Service must accept exactly public.item to stay in Files and Folders." >&2
+    exit 1
+fi
 for plist in "$service_info" "$file_manager_info"; do
     background="$(plutil -extract 'LSBackgroundOnly' raw -o - "$plist")"
     if [[ "$background" != "true" ]]; then
