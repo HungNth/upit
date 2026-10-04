@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent specification:** `../spec.md`
 
@@ -12,12 +12,12 @@
 
 **Demo path:** Launch Upit Desktop on Linux with normal, Setup, and Repair Configuration Set states; open File Manager Integration and observe the same non-blocking unsupported state with no platform actions.
 
-- [ ] A deep File Manager Integration module exposes state and available actions without leaking platform commands or package details to Desktop.
-- [ ] The user-visible state model supports `Registered`, `Needs Repair`, `Reinstall Upit`, and `Not supported on Linux`.
-- [ ] Desktop adds File Manager Integration as a dedicated fifth sidebar area.
-- [ ] The area remains reachable while the Configuration Set requires Setup or Repair.
-- [ ] Linux reports `Not supported on Linux` and explains that this feature provides no Linux file-manager adapter.
-- [ ] Linux exposes no registration, Repair, operating-system settings, removal, or file-manager verification action.
-- [ ] File Manager Integration state remains independent from Configuration Set readiness and does not block Manual Upload or configuration management.
-- [ ] The area has accessible navigation, headings, status announcements, and action semantics consistent with the existing Desktop surface.
-- [ ] Tests cover the module interface, Linux adapter, Desktop rendering, Setup/Repair accessibility, and failure isolation without testing pass-through wiring.
+- [x] A deep File Manager Integration module exposes state and available actions without leaking platform commands or package details to Desktop.
+- [x] The user-visible state model supports `Registered`, `Needs Repair`, `Reinstall Upit`, and `Not supported on Linux`.
+- [x] Desktop adds File Manager Integration as a dedicated fifth sidebar area.
+- [x] The area remains reachable while the Configuration Set requires Setup or Repair.
+- [x] Linux reports `Not supported on Linux` and explains that this feature provides no Linux file-manager adapter.
+- [x] Linux exposes no registration, Repair, operating-system settings, removal, or file-manager verification action.
+- [x] File Manager Integration state remains independent from Configuration Set readiness and does not block Manual Upload or configuration management.
+- [x] The area has accessible navigation, headings, status announcements, and action semantics consistent with the existing Desktop surface.
+- [x] Tests cover the module interface, Linux adapter, Desktop rendering, Setup/Repair accessibility, and failure isolation without testing pass-through wiring.

@@ -12,20 +12,20 @@
 
 **Demo path:** Package a development Upit application on macOS, invoke `Upload with Upit` from Finder against a local endpoint, and observe progress close followed by the silent native notification `Upload complete` / `Final URL copied to clipboard.` Invoke a second upload to observe a distinct event, select the notification to prove no Upit action occurs, then exercise denied permission and forced delivery failure to prove the helper exits without an `NSAlert`. Trigger one actionable non-clean outcome to prove its existing interaction remains available.
 
-- [ ] The one-shot helper has one platform-neutral terminal-feedback policy that defines clean success as a succeeded File Manager Upload with no warnings or recovery actions under the always-copy contract.
-- [ ] The shared policy owns the exact clean-success title, body, silent presentation, no-product-action rule, distinct-event rule, and silent delivery-failure outcome; native adapters do not duplicate those product decisions.
-- [ ] `FileManagerUploadService` remains authoritative for upload status, warnings, clipboard delivery, and recovery actions and does not acquire operating-system presentation policy.
-- [ ] A clean success closes active macOS progress feedback before terminal notification delivery is attempted.
-- [ ] Initial and updated macOS progress notifications are silent; their display and Cancel action remain, and actionable terminal notifications retain their existing sound.
-- [ ] macOS emits one silent `UNUserNotificationCenter` notification with title `Upload complete` and body `Final URL copied to clipboard.`
-- [ ] The notification contains no file name, path, endpoint, request value, response content, Original URL, Final URL, credential, or action token.
-- [ ] The notification has no Copy, Retry, Open Upit, URL-opening, clipboard, or Desktop activation behavior; selecting it performs no Upit action.
-- [ ] Sequential clean successes use distinct notification identifiers and are not replaced or aggregated by Upit; macOS remains free to group them.
-- [ ] Notification permission denied/unavailable and notification API delivery failure are independently controllable test cases.
-- [ ] In both unavailable-delivery cases, clean success remains successful, active progress closes, no `NSAlert` or custom fallback appears, and the one-shot helper exits without waiting for acknowledgment.
+- [x] The one-shot helper has one platform-neutral terminal-feedback policy that defines clean success as a succeeded File Manager Upload with no warnings or recovery actions under the always-copy contract.
+- [x] The shared policy owns the exact clean-success title, body, silent presentation, no-product-action rule, distinct-event rule, and silent delivery-failure outcome; native adapters do not duplicate those product decisions.
+- [x] `FileManagerUploadService` remains authoritative for upload status, warnings, clipboard delivery, and recovery actions and does not acquire operating-system presentation policy.
+- [x] A clean success closes active macOS progress feedback before terminal notification delivery is attempted.
+- [x] Initial and updated macOS progress notifications are silent; their display and Cancel action remain, and actionable terminal notifications retain their existing sound.
+- [x] macOS emits one silent `UNUserNotificationCenter` notification with title `Upload complete` and body `Final URL copied to clipboard.`
+- [x] The notification contains no file name, path, endpoint, request value, response content, Original URL, Final URL, credential, or action token.
+- [x] The notification has no Copy, Retry, Open Upit, URL-opening, clipboard, or Desktop activation behavior; selecting it performs no Upit action.
+- [x] Sequential clean successes use distinct notification identifiers and are not replaced or aggregated by Upit; macOS remains free to group them.
+- [x] Notification permission denied/unavailable and notification API delivery failure are independently controllable test cases.
+- [x] In both unavailable-delivery cases, clean success remains successful, active progress closes, no `NSAlert` or custom fallback appears, and the one-shot helper exits without waiting for acknowledgment.
 - [ ] Rejection, cancellation, success with warning, failure, `Copy Final URL`, `Retry`, and `Open Upit` retain their existing interactive feedback, action-token privacy, consumption, and expiry behavior.
-- [ ] CLI and Manual Upload behavior, Configuration Set schema, notification preferences, upload history, and background-process behavior remain unchanged.
-- [ ] Deterministic policy tests and narrow macOS adapter tests prove the contract without duplicating upload execution tests or asserting source layout/native call ordering.
+- [x] CLI and Manual Upload behavior, Configuration Set schema, notification preferences, upload history, and background-process behavior remain unchanged.
+- [x] Deterministic policy tests and narrow macOS adapter tests prove the contract without duplicating upload execution tests or asserting source layout/native call ordering.
 
 ## Comments
 

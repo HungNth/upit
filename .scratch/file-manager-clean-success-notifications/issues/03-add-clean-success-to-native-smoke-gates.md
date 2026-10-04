@@ -12,17 +12,17 @@
 
 **Demo path:** On macOS 14+ Apple Silicon and Windows 11 x64, install the appropriate development or protected package, invoke `Upload with Upit` from the real file-manager surface, observe progress close and the silent native notification, select it without causing an Upit action, repeat the upload for a distinct event, and confirm no modal clean-success dialog remains. On each platform, also trigger at least one warning, failure, or recovery action and confirm it remains interactive.
 
-- [ ] The macOS smoke starts File Manager Upload from Finder Services or Quick Actions rather than invoking the private helper directly.
-- [ ] The macOS smoke observes active progress close, one silent native notification with the confirmed title/body, operating-system-controlled dismissal, no Upit action on selection, helper exit, and no clean-success `NSAlert`.
+- [x] The macOS smoke starts File Manager Upload from Finder Services or Quick Actions rather than invoking the private helper directly.
+- [x] The macOS smoke observes active progress close, one silent native notification with the confirmed title/body, operating-system-controlled dismissal, no Upit action on selection, helper exit, and no clean-success `NSAlert`.
 - [ ] The Windows smoke starts File Manager Upload from the Windows 11 primary File Explorer context menu rather than invoking the private helper directly.
 - [ ] The Windows smoke observes the progress Task Dialog close, one silent Windows Toast with the confirmed title/body, operating-system-controlled dismissal, no Upit action on selection, helper exit, and no clean-success Task Dialog or Message Box fallback.
 - [ ] Each platform smoke performs two sequential clean successes and observes two distinct terminal events without Upit replacement or aggregation.
 - [ ] Each platform smoke confirms notification content omits file names, paths, endpoints, request values, response content, Original URLs, Final URLs, credentials, and action tokens.
 - [ ] Each platform smoke exercises at least one rejection, cancellation, warning, failure, or recovery-action path and confirms it remains visible and interactive rather than adopting the clean-success silent fallback.
-- [ ] Ordinary File Manager Upload still opens no Upit Desktop window, Dock icon, tray process, or resident worker during the smoke.
-- [ ] CLI and Manual Upload remain operational against the same Configuration Set after the native smoke.
-- [ ] The smoke gates state clearly that unsigned or local evidence does not prove publisher trust, notarization, package registration, or production readiness.
-- [ ] Existing umbrella Windows signed-release and macOS signed/notarized-release tickets remain the authoritative production proof; this focused ticket does not replace or close them.
+- [x] Ordinary File Manager Upload still opens no Upit Desktop window, Dock icon, tray process, or resident worker during the smoke.
+- [x] CLI and Manual Upload remain operational against the same Configuration Set after the native smoke.
+- [x] The smoke gates state clearly that unsigned or local evidence does not prove publisher trust, notarization, package registration, or production readiness.
+- [x] Existing umbrella Windows signed-release and macOS signed/notarized-release tickets remain the authoritative production proof; this focused ticket does not replace or close them.
 
 ## Comments
 

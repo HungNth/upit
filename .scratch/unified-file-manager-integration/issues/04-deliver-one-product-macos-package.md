@@ -4,7 +4,7 @@
 
 **Blocked by:** 03: Manage macOS File Manager Integration from Desktop.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent specification:** `../spec.md`
 
@@ -12,13 +12,13 @@
 
 **Demo path:** Build the macOS artifact, drag `Upit.app` into Applications, open Desktop, inspect File Manager Integration, invoke `Upload with Upit` from Finder, update the installed app without a duplicate action, then prepare removal and confirm the Service disappears.
 
-- [ ] The DMG contains one outer application named `Upit` and the normal Applications shortcut expected by drag installation.
-- [ ] The Finder Service provider and one-shot worker remain private nested package components with no independent Dock or application entry.
-- [ ] User-visible package, notification, and Service-provider names resolve to `Upit`; the Finder action remains `Upload with Upit`.
-- [ ] Consumer documentation uses drag-to-Applications installation and does not require the installation shell script.
-- [ ] First Desktop launch performs the non-mutating inspection defined by the macOS management slice and offers Repair rather than silently registering.
-- [ ] Installing or updating the application does not create duplicate Service registrations or separate product identities.
-- [ ] The explicit removal flow unregisters the nested Service and outer application before the user removes the bundle.
-- [ ] Unsigned verification builds validate bundle layout, minimum platform, metadata, helper privacy, action naming, and install/update/removal scripts without claiming production trust.
-- [ ] Existing CLI and Manual Upload behavior remains unchanged against the same Configuration Set.
-- [ ] A local macOS smoke proves drag installation, Desktop inspection, explicit Repair, Finder invocation, update continuity, and deterministic cleanup; protected signing/notarization proof remains ticket 09.
+- [x] The DMG contains one outer application named `Upit` and the normal Applications shortcut expected by drag installation.
+- [x] The Finder Service provider and one-shot worker remain private nested package components with no independent Dock or application entry.
+- [x] User-visible package, notification, and Service-provider names resolve to `Upit`; the Finder action remains `Upload with Upit`.
+- [x] Consumer documentation uses drag-to-Applications installation and does not require the installation shell script.
+- [x] First Desktop launch performs the non-mutating inspection defined by the macOS management slice and offers Repair rather than silently registering.
+- [x] Installing or updating the application does not create duplicate Service registrations or separate product identities.
+- [x] The explicit removal flow unregisters the nested Service and outer application before the user removes the bundle.
+- [x] Unsigned verification builds validate bundle layout, minimum platform, metadata, helper privacy, action naming, and install/update/removal scripts without claiming production trust.
+- [x] Existing CLI and Manual Upload behavior remains unchanged against the same Configuration Set.
+- [x] A local macOS smoke proves drag installation, Desktop inspection, explicit Repair, Finder invocation, update continuity, and deterministic cleanup; protected signing/notarization proof remains ticket 09.
