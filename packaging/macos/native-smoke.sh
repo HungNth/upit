@@ -36,6 +36,8 @@ if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
     echo "macOS 14+ Apple Silicon is required for the native smoke." >&2
     exit 1
 fi
+# Native surface evidence must never run under the test-only headless override.
+unset UPIT_FILE_MANAGER_HEADLESS
 if [[ -z "$APP_PATH" || ! -d "$APP_PATH" ]]; then
     echo "--app must point to an existing Upit.app bundle." >&2
     exit 2
@@ -103,6 +105,7 @@ cat > "$work_directory/server.py" <<'PY'
 import http.server
 import pathlib
 import sys
+import time
 
 port_file = pathlib.Path(sys.argv[1])
 
@@ -110,6 +113,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("content-length", "0"))
         self.rfile.read(length)
+        time.sleep(2)  # Leave time to observe progress or choose Cancel.
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
@@ -182,14 +186,25 @@ else
     cli_regression=false
 fi
 
-
 discovery=false
 selection_rejection=false
 success=false
+clean_success=false
+clean_success_second=false
+notification_title_body=false
+notification_silent=false
+notification_os_dismissal=false
+notification_no_action=false
+no_clean_modal=false
+two_distinct_events=false
 warning=false
+warning_interactive=false
 failure=false
+failure_interactive=false
 cancellation=false
+cancellation_interactive=false
 recovery=false
+recovery_actions_interactive=false
 privacy=false
 no_window=false
 helper_exit=false
@@ -202,19 +217,64 @@ removal_prepared=false
 
 if read_bool "Confirm Upload with Upit is visible in Finder Services or Quick Actions"; then discovery=true; fi
 if read_bool "Confirm empty, multi-file, directory, and non-regular selections are rejected"; then selection_rejection=true; fi
-if read_bool "Confirm one-file success completed against the local endpoint"; then success=true; fi
+if read_bool "Perform first Upload with Upit from Finder on upit-smoke.txt: confirm active progress closes, silent banner appears, and no NSAlert/modal opens"; then
+    clean_success=true
+    success=true
+fi
 if [[ "$success" == true && "$(pbpaste)" == "http://127.0.0.1:$port/result" ]]; then always_copy=true; fi
-if read_bool "Confirm a Shortener or clipboard warning remains a warning"; then warning=true; fi
-if read_bool "Confirm a runtime failure shows sanitized native failure feedback"; then failure=true; fi
-if read_bool "Confirm Cancel stops a slow upload without retry"; then cancellation=true; fi
-if read_bool "Confirm Copy Final URL, Retry, Open Upit Desktop, and configuration recovery actions"; then recovery=true; fi
-if read_bool "Confirm native feedback showed no path, file name, URL, endpoint, response, or credential"; then privacy=true; fi
-if read_bool "Confirm no Upit Desktop window or Dock icon appeared during the Finder action"; then no_window=true; fi
-if read_bool "Confirm the helper exited after completion or its action window"; then helper_exit=true; fi
-if read_bool "Confirm Copy Final URL after automatic copy failure used the existing result without another endpoint request"; then copy_recovery_without_reupload=true; fi
-if read_bool "Confirm a signed product update preserved one identity and did not duplicate Finder Services"; then atomic_update=true; fi
-if read_bool "Confirm Manual Upload and CLI still work against the same Configuration Set"; then manual_continuity=true; fi
-
+if read_bool "Confirm the clean-success notification has exact title 'Upload complete' and exact body 'Final URL copied to clipboard.'"; then
+    notification_title_body=true
+fi
+if read_bool "Confirm the clean-success notification played no sound and respected system notification/focus rules"; then
+    notification_silent=true
+fi
+if read_bool "Confirm the notification auto-hides / dismisses under standard macOS control"; then
+    notification_os_dismissal=true
+fi
+if read_bool "Click/select the clean-success notification: confirm it triggers NO Upit action (no window, no URL open, no re-copy, no retry)"; then
+    notification_no_action=true
+fi
+if read_bool "Perform a second sequential Upload with Upit on upit-smoke.txt: confirm a second distinct notification appears without replacing or aggregating the first"; then
+    clean_success_second=true
+    two_distinct_events=true
+fi
+if read_bool "Confirm clean success leaves NO modal dialog, OK alert, or NSAlert on screen"; then
+    no_clean_modal=true
+fi
+if read_bool "Use Desktop to select a valid Shortener with an unreachable endpoint, then upload from Finder: confirm the completed upload retains existing warning feedback rather than clean success (restore the Shortener afterward)"; then
+    warning=true
+    warning_interactive=true
+fi
+if read_bool "Stop the local endpoint or point uploader to an unreachable port: confirm existing interactive native feedback appears offering Retry rather than silent clean success"; then
+    failure=true
+    failure_interactive=true
+fi
+if read_bool "Cancel during upload progress: confirm feedback remains interactive and stops without automatic retry"; then
+    cancellation=true
+    cancellation_interactive=true
+fi
+if read_bool "Confirm actionable paths preserve Copy Final URL, Retry, Open Upit Desktop, and configuration recovery actions as interactive native feedback"; then
+    recovery=true
+    recovery_actions_interactive=true
+fi
+if read_bool "Confirm clean-success notification and all native feedback omit file names, paths, endpoints, request values, response content, URLs, credentials, and action tokens"; then
+    privacy=true
+fi
+if read_bool "Confirm ordinary File Manager Upload opened NO Upit Desktop window, Dock icon, menu bar/tray process, or resident worker"; then
+    no_window=true
+fi
+if read_bool "Confirm the helper process exited immediately after clean-success notification delivery / outcome completion"; then
+    helper_exit=true
+fi
+if read_bool "Confirm Copy Final URL after automatic copy failure used the existing result without another endpoint request"; then
+    copy_recovery_without_reupload=true
+fi
+if read_bool "Confirm a signed product update preserved one identity and did not duplicate Finder Services"; then
+    atomic_update=true
+fi
+if read_bool "Confirm Manual Upload (via Desktop) and CLI upload still work against the same Configuration Set"; then
+    manual_continuity=true
+fi
 open "$installed_app"
 if read_bool "Choose Prepare to Remove Upit in Desktop, explicitly confirm, and verify Desktop closes after unregistering the Service and outer app"; then removal_prepared=true; fi
 if read_bool "Move this test Upit.app to Trash and confirm Upload with Upit disappears from Finder Services" && [[ ! -e "$installed_app" ]]; then uninstall_cleanup=true; fi
@@ -225,15 +285,33 @@ cat > "$EVIDENCE_PATH" <<EOF
   "minimumSystemVersion": "14.0",
   "architecture": "arm64",
   "signatureRequired": $([[ "$REQUIRE_SIGNATURE" == 1 ]] && echo true || echo false),
+  "evidenceType": "$([[ "$REQUIRE_SIGNATURE" == 1 ]] && echo "signedSupportingSmoke" || echo "localUnsignedSupportingSmoke")",
+  "authoritativeProductionProof": false,
+  "umbrellaReleaseGatePreserved": true,
+  "notes": "Unsigned or local evidence does not prove publisher trust, notarization, package registration, or production readiness. Authoritative production proof requires the umbrella signed/notarized release workflow.",
   "finderServiceDiscovery": $discovery,
   "selectionValidation": $selection_rejection,
   "success": $success,
+  "cleanSuccessFirst": $clean_success,
+  "cleanSuccessSecond": $clean_success_second,
+  "twoDistinctSequentialSuccessEvents": $two_distinct_events,
+  "notificationTitleAndBodyExact": $notification_title_body,
+  "notificationSilent": $notification_silent,
+  "notificationOSDismissal": $notification_os_dismissal,
+  "notificationNoUpitActionOnSelection": $notification_no_action,
+  "noCleanSuccessModalOrAlert": $no_clean_modal,
   "warning": $warning,
+  "warningRemainsInteractive": $warning_interactive,
   "failure": $failure,
+  "failureRemainsInteractive": $failure_interactive,
   "cancellation": $cancellation,
+  "cancellationRemainsInteractive": $cancellation_interactive,
   "recoveryActions": $recovery,
+  "recoveryActionsRemainInteractive": $recovery_actions_interactive,
   "privacy": $privacy,
+  "privacyNoSensitiveData": $privacy,
   "noDesktopWindowOrDockIcon": $no_window,
+  "noDesktopWindowDockIconOrResidentProcess": $no_window,
   "helperExit": $helper_exit,
   "cliRegression": $cli_regression,
   "consumerDragInstallAndExplicitRepair": true,
@@ -247,7 +325,7 @@ cat > "$EVIDENCE_PATH" <<EOF
 }
 EOF
 
-if [[ "$discovery" != true || "$selection_rejection" != true || "$success" != true || "$warning" != true || "$failure" != true || "$cancellation" != true || "$recovery" != true || "$privacy" != true || "$no_window" != true || "$helper_exit" != true || "$cli_regression" != true || "$uninstall_cleanup" != true || "$always_copy" != true || "$copy_recovery_without_reupload" != true || "$atomic_update" != true || "$manual_continuity" != true || "$removal_prepared" != true ]]; then
+if [[ "$discovery" != true || "$selection_rejection" != true || "$success" != true || "$clean_success" != true || "$clean_success_second" != true || "$two_distinct_events" != true || "$notification_title_body" != true || "$notification_silent" != true || "$notification_os_dismissal" != true || "$notification_no_action" != true || "$no_clean_modal" != true || "$warning" != true || "$warning_interactive" != true || "$failure" != true || "$failure_interactive" != true || "$cancellation" != true || "$cancellation_interactive" != true || "$recovery" != true || "$recovery_actions_interactive" != true || "$privacy" != true || "$no_window" != true || "$helper_exit" != true || "$cli_regression" != true || "$uninstall_cleanup" != true || "$always_copy" != true || "$copy_recovery_without_reupload" != true || "$atomic_update" != true || "$manual_continuity" != true || "$removal_prepared" != true ]]; then
 	echo "Native smoke is incomplete; see $EVIDENCE_PATH." >&2
 	exit 1
 fi

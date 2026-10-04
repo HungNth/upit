@@ -33,5 +33,22 @@ The GitHub workflow uses three gates:
 3. A required self-hosted runner labelled `Windows`, `X64`, and `upit-native-smoke`. The operator verifies the primary menu, selection rejection, privacy, cancellation, clipboard recovery without re-upload, Desktop status/Repair, atomic update, Manual Upload, CLI continuity, and uninstall. Evidence is uploaded before publishing the one installer.
 
 The signing environment must provide `UPIT_WINDOWS_CERTIFICATE_BASE64`, `UPIT_WINDOWS_CERTIFICATE_PASSWORD`, and `UPIT_MSIX_PUBLISHER`. The native smoke environment must provide an interactive Windows 11 x64 runner; a boolean secret alone is not accepted as smoke evidence.
+## Native smoke
 
+`native-smoke.ps1` runs on a Windows 11 x64 runner. It installs the consumer installer, validates automated headless helper and CLI behavior, restores any inherited headless environment flags, opens a File Explorer fixture, prompts the operator through interactive clean-success and failure paths, writes structured JSON evidence, and unregisters/uninstalls the package on exit.
+
+To run:
+
+```powershell
+.\packaging\windows\native-smoke.ps1 `
+  -InstallerPath dist\windows\Upit-0.7.0-setup.exe `
+  -InstallDirectory "$env:LOCALAPPDATA\Programs\Upit" `
+  [-EvidencePath native-smoke-evidence.json]
+```
+
+### What can and cannot be proven
+
+- **Can be proven on the local test runner**: Primary Windows 11 File Explorer context-menu integration, folder and multi-selection suppression, progress Task Dialog closing, silent Windows Toast delivery via package identity with exact title (`Upload complete`) and body (`Final URL copied to clipboard.`), operating-system dismissal into Notification Center, absence of Upit action on Toast click, two sequential clean successes generating two distinct events without aggregation/replacement, absence of clean-success Task Dialog/Message Box modal fallback, retention of interactive modal Task Dialogs/alerts for warnings/failures/cancellations/recovery actions, helper process exit immediately upon completion, absence of Desktop window/tray icon/resident worker during direct upload, and CLI/Manual upload continuity against the same Configuration Set.
+- **Cannot be proven by supporting smoke alone**: Executing the native smoke script on an individual runner is supporting smoke evidence only; it does **not** independently prove publisher trust, SmartScreen reputation across consumer fleets, or complete production readiness.
+- **Authoritative production proof**: Only the protected signed release workflow (`UPIT_PROTECTED_RELEASE=true` on a tagged release with valid Authenticode signature) running on the dedicated `upit-native-smoke` runner provides authoritative production release proof. The focused clean-success smoke evidence augments rather than replaces the umbrella signed-release gates.
 Unsupported release routes: Windows 10 classic shell verbs, Windows ARM64, unsigned production packages, and portable registration. macOS uses its own one-product DMG and Finder Services route.

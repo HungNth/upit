@@ -41,6 +41,8 @@ jobs:
         run: go vet ./...
       - name: Run native Finder selection tests
         run: native/macos/finder-service/test.sh
+      - name: Run native clean-success notification tests
+        run: native/macos/feedback/test.sh
       - name: Build unsigned verification package
         run: MACOS_VERSION=0.7.0 make package-macos
       - name: Verify unsigned DMG checksum

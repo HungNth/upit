@@ -54,4 +54,19 @@ Ordinary pull requests and branch pushes build unsigned artifacts and never rece
 
 `native-smoke.sh` requires a real macOS 14+ Apple Silicon host. It installs the bundle into a supplied directory, prepares a temporary Configuration Set and local HTTP endpoint, opens a Finder fixture, prompts for the native Finder lifecycle assertions, runs the unchanged CLI regression when supplied, writes JSON evidence, and unregisters/removes the Service during cleanup.
 
-The evidence must cover Service discovery, selection rejection, success, warning, failure, cancellation, privacy, recovery actions, no Desktop/Dock behavior, helper exit, CLI continuity, and uninstall cleanup. A compile or package check is not a substitute for this smoke.
+To run:
+
+```bash
+bash packaging/macos/native-smoke.sh \
+  --app dist/macos/Upit.app \
+  --install-directory /Applications \
+  --cli bin/upit-darwin-arm64 \
+  --evidence native-smoke-evidence.json \
+  [--require-signature]
+```
+
+### What can and cannot be proven
+
+- **Can be proven locally**: Real Finder Services/Quick Actions discovery, single-selection validation, progress feedback closing, silent native notification delivery via `UNUserNotificationCenter` with exact title (`Upload complete`) and body (`Final URL copied to clipboard.`), operating-system dismissal, absence of Upit action on selection, two sequential clean successes generating two distinct events without aggregation/replacement, absence of clean-success `NSAlert` modal fallback, retention of existing interactive native feedback (banner action buttons or alert fallback) for warnings/failures/cancellations/recovery actions, helper exit, absence of Desktop window/Dock icon/tray/resident worker during upload, and CLI/Manual upload continuity against the same Configuration Set.
+- **Cannot be proven by local or unsigned smoke**: Unsigned or development evidence does **not** prove publisher trust, Developer ID signatures, Apple notarization, stapled tickets, Gatekeeper acceptance on clean machines, or production readiness.
+- **Authoritative production proof**: Only the protected signed/notarized release workflow (`UPIT_PROTECTED_RELEASE=true` on a tagged release with `--require-signature`) running on the dedicated `upit-native-smoke` runner provides authoritative production release proof. The focused clean-success smoke evidence augments rather than replaces the umbrella signed/notarized release gates.

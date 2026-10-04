@@ -37,6 +37,7 @@ $configFiles = @('config.json', 'custom-uploader.json', 'custom-shortener.json')
 $backedUp = @{}
 $automated = [ordered]@{}
 $operatorObserved = [ordered]@{}
+$priorHeadless = $env:UPIT_FILE_MANAGER_HEADLESS
 New-Item -ItemType Directory -Path $fixtureDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $configBackup -Force | Out-Null
 Set-Content -Path (Join-Path $fixtureDirectory 'upit-smoke.txt') -Value 'protected Windows native smoke fixture' -Encoding UTF8
@@ -65,11 +66,12 @@ try {
         while ($server.IsListening) {
             try {
                 $context = $server.GetContext()
+                Add-Content -Path $jobRequestLog -Value 'REQUEST'
+                Start-Sleep -Seconds 2 # Leave time to observe progress or choose Cancel.
                 $context.Response.StatusCode = 200
                 $bytes = [Text.Encoding]::UTF8.GetBytes('https://files.example.test/native-smoke')
                 $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
                 $context.Response.Close()
-                Add-Content -Path $jobRequestLog -Value 'REQUEST'
             } catch {
                 break
             }
@@ -79,7 +81,7 @@ try {
     $serverReady = $false
     for ($attempt = 0; $attempt -lt 50; $attempt++) {
         Start-Sleep -Milliseconds 100
-        if (Test-Path $requestLog -PathType Leaf -and (Get-Content $requestLog) -contains 'READY') {
+        if ((Test-Path $requestLog -PathType Leaf) -and (Get-Content $requestLog) -contains 'READY') {
             $serverReady = $true
             break
         }
@@ -109,7 +111,6 @@ try {
     Set-Content -Path (Join-Path $configDirectory 'config.json') -Value $config -Encoding UTF8
     Set-Content -Path (Join-Path $configDirectory 'custom-uploader.json') -Value $uploader -Encoding UTF8
     Remove-Item (Join-Path $configDirectory 'custom-shortener.json') -Force -ErrorAction SilentlyContinue
-
     $env:UPIT_FILE_MANAGER_HEADLESS = '1'
     $helper = Start-Process -FilePath (Join-Path $payloadRoot 'upit-file-manager.exe') -ArgumentList (Join-Path $fixtureDirectory 'upit-smoke.txt') -PassThru -NoNewWindow
     if (-not $helper.WaitForExit(30000)) {
@@ -125,21 +126,49 @@ try {
     if ((Get-Clipboard -Raw).Trim() -ne 'https://files.example.test/native-smoke') { throw 'File Manager Upload did not copy the Final URL with the preference disabled.' }
     $automated.alwaysCopy = $true
 
+    # Always remove the test-only override during real native surface observations.
+    # Restore the caller's environment only in finally, including an inherited value of 1.
+    Remove-Item Env:UPIT_FILE_MANAGER_HEADLESS -ErrorAction SilentlyContinue
+
     $cli = Start-Process -FilePath (Join-Path $payloadRoot 'upit.exe') -ArgumentList '--help' -PassThru -Wait -NoNewWindow
     if ($cli.ExitCode -ne 0) { throw "CLI help exited with code $($cli.ExitCode)." }
     $automated.cliHelp = $true
 
     Start-Process explorer.exe $fixtureDirectory | Out-Null
-    Write-Host 'Interactive smoke required on this protected Windows 11 x64 runner:'
-    Write-Host '  1. Verify Upload with Upit appears in the primary menu for exactly one regular file.'
+    Write-Host 'Interactive smoke required on this Windows 11 x64 runner:'
+    Write-Host '  1. Verify Upload with Upit appears in the primary context menu for exactly one regular file.'
     Write-Host '  2. Verify folders and multi-selection do not expose or invoke the command.'
-    Write-Host '  3. Exercise local success, warning, cancellation, explicit Retry, Copy, and configuration recovery.'
-    Write-Host '  4. Verify no Upit Desktop window opens during direct upload.'
+    Write-Host '  3. Exercise real clean success from Explorer on upit-smoke.txt: progress Task Dialog closes, silent Windows Toast appears.'
+    Write-Host '  4. Confirm Toast title is exactly "Upload complete" and body is exactly "Final URL copied to clipboard."'
+    Write-Host '  5. Confirm Toast auto-hides/dismisses under standard OS control and clicking it triggers NO Upit action.'
+    Write-Host '  6. Repeat upload for second clean success: confirm distinct second Toast without aggregation or replacement.'
+    Write-Host '  7. Confirm clean success leaves NO modal Task Dialog or Message Box.'
+    Write-Host '  8. Select a valid Shortener with an unreachable endpoint in Desktop; verify completed upload warning remains interactive, then restore the Shortener.'
+    Write-Host '  9. Stop local endpoint or point uploader to unreachable port; verify failure feedback remains interactive and offers Retry.'
+    Write-Host ' 10. Cancel during upload progress; verify feedback remains interactive without automatic retry.'
+    Write-Host ' 11. Verify Copy Final URL, Retry, Open Upit, and configuration recovery remain interactive.'
+    Write-Host ' 12. Verify no Upit Desktop window, tray icon, or resident worker process remains after direct upload.'
+    Write-Host ' 13. Verify Desktop Repair status, atomic update, and Manual Upload + CLI continuity.'
+
     $checks = [ordered]@{
         primaryContextMenu = 'primary File Explorer menu observed for one regular file'
         foldersAndMultiSelectionHidden = 'folder and multi-selection command suppression observed'
         lifecycle = 'success, warning, cancellation, Retry, Copy, and configuration recovery observed'
         noDesktopWindow = 'Upit Desktop did not open during direct upload'
+        cleanSuccessFirst = 'first Upload with Upit from Explorer: progress Task Dialog closed, silent Windows Toast appeared'
+        cleanSuccessTitleBodyExact = 'Toast title is exactly "Upload complete" and body is exactly "Final URL copied to clipboard."'
+        cleanSuccessSilent = 'Toast is silent and respected Windows notification and focus assist policy'
+        cleanSuccessOSDismissal = 'Toast auto-hided or dismissed under standard Windows 11 notification center control'
+        cleanSuccessNoActionOnSelection = 'selecting or clicking Toast triggered NO Upit action (no window, no retry, no URL open)'
+        cleanSuccessSecondDistinctEvent = 'second sequential Upload with Upit showed a second distinct Toast without replacing or aggregating the first'
+        noCleanSuccessModalFallback = 'clean success left NO modal Task Dialog, Message Box, or Desktop window'
+        warningRemainsInteractive = 'Shortener or clipboard warning remained interactive and visible (not silent)'
+        failureRemainsInteractive = 'runtime failure remained interactive with Task Dialog/Message Box and Retry'
+        cancellationRemainsInteractive = 'cancelling progress Task Dialog stopped upload without retry and remained interactive'
+        recoveryActionsRemainInteractive = 'Copy Final URL, Retry, Open Upit, and configuration recovery actions remained interactive'
+        privacyNoSensitiveData = 'Toast and all native feedback omitted file names, paths, endpoints, URLs, request/response values, credentials, and action tokens'
+        noResidentProcess = 'ordinary File Manager Upload opened no Upit Desktop window, tray icon, or resident worker'
+        helperExitedImmediately = 'one-shot helper exited immediately after notification delivery / completion'
         integrationStatusAndRepair = 'Desktop reported truthful integration status; removing registration then choosing Repair restored it without elevation'
         unsafeRepairFailsClosed = 'missing, unsigned, untrusted, and mismatched repair inputs produced Reinstall Upit without registration changes'
         clipboardRecoveryWithoutReupload = 'clipboard failure preserved success and Copy Final URL reused the existing URL without another endpoint request'
@@ -157,6 +186,10 @@ try {
         installerSha256 = (Get-FileHash -Algorithm SHA256 $InstallerPath).Hash.ToLowerInvariant()
         osBuild = $os.BuildNumber
         architecture = $env:PROCESSOR_ARCHITECTURE
+        evidenceType = 'signedSupportingSmoke'
+        authoritativeProductionProof = $false
+        umbrellaReleaseGatePreserved = $true
+        notes = 'Unsigned or local evidence does not prove publisher trust, MSIX package identity registration, or production readiness. Authoritative production proof requires the umbrella signed-release workflow execution.'
         automated = $automated
         operatorObserved = $operatorObserved
         timestampUtc = [DateTime]::UtcNow.ToString('O')
@@ -164,7 +197,11 @@ try {
         machine = [Environment]::MachineName
     }
 } finally {
-    Remove-Item Env:UPIT_FILE_MANAGER_HEADLESS -ErrorAction SilentlyContinue
+    if ($null -ne $priorHeadless) {
+        $env:UPIT_FILE_MANAGER_HEADLESS = $priorHeadless
+    } else {
+        Remove-Item Env:UPIT_FILE_MANAGER_HEADLESS -ErrorAction SilentlyContinue
+    }
     if ($null -ne $serverJob) {
         Stop-Job -Job $serverJob -ErrorAction SilentlyContinue
         Remove-Job -Job $serverJob -Force -ErrorAction SilentlyContinue
