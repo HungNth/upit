@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-04",
+  "platform": "macOS 14+ arm64",
+  "artifactVersion": "0.7.0",
+  "evidenceType": "localAdHocSupportingSmoke",
+  "authoritativeProductionProof": false,
+  "finderIntegration": {
+    "menuVisible": true,
+    "explicitRepairRestoredTestService": true,
+    "originalInstalledAppModified": false
+  },
+  "cleanSuccess": {
+    "uploadCompleted": true,
+    "finalURLCopied": true,
+    "progressClosed": true,
+    "title": "Upload complete",
+    "body": "Final URL copied to clipboard.",
+    "silentAfterProgressFix": true,
+    "modalAcknowledgmentVisible": false,
+    "autoDismissed": true,
+    "selectionOpenedProductSurface": false,
+    "selectionCopiedAgain": false,
+    "selectionHelperExited": true
+  },
+  "sequentialSuccess": {
+    "twoVisibleEvents": true,
+    "nativeEventIDs": [
+      "EYEUIURJVC6R2VJX",
+      "GEJE4JJSM4MYZEEJ"
+    ]
+  },
+  "notificationsDisabled": {
+    "controlledInSystemSettings": true,
+    "finalURLCopied": true,
+    "progressClosed": true,
+    "bannerVisible": false,
+    "modalAcknowledgmentVisible": false,
+    "helperExited": true,
+    "authorizationGranted": false
+  },
+  "actionableFailure": {
+    "uploadFailedVisible": true,
+    "retryActionVisible": true,
+    "hiddenAsCleanSuccess": false
+  },
+  "retry": {
+    "firstAttemptAfterActionExpiryIgnored": true,
+    "actionLifetimeSeconds": 600,
+    "validWindowHTTPStatuses": [503, 200],
+    "validWindowFinalURLCopied": true,
+    "validWindowCompletionRequestQueued": true,
+    "validWindowCompletionBannerObserved": false,
+    "acceptancePassed": false
+  },
+  "discoveredAndFixedDuringSmoke": {
+    "nonARCProgressIdentifierCrash": true,
+    "audibleProgressOverlappingCompletion": true,
+    "notificationSelectionInvalidUsageAlert": true
+  },
+  "remainingGaps": {
+    "firstPermissionPromptCompletesBeforeHelperExit": false,
+    "selectionValidationObserved": false,
+    "cancellationObserved": false,
+    "warningAndCopyRecoveryObserved": false,
+    "retryCompletionBannerObserved": false,
+    "signedNotarizedReleaseSmoke": false,
+    "windowsNativeSmoke": false
+  },
+  "restoration": {
+    "configurationPathsBytesAndModesMatchBackup": true,
+    "originalDesktopBinaryMatchesPretestHash": true,
+    "launchServicesRestoredToApplicationsApp": true,
+    "deletedTestPathStillRegistered": false,
+    "testAppRemoved": true,
+    "testProcessesRemaining": false,
+    "testMountsRemaining": false,
+    "temporaryTestPathsRemaining": false,
+    "notificationPreferenceRestoredByUser": true
+  },
+  "notes": "Local unsigned/ad-hoc evidence only. It does not prove Developer ID signing, notarization, clean-machine behavior, or production readiness."
+}

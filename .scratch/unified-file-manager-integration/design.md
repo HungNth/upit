@@ -33,8 +33,10 @@ Upit Desktop remains supported on Linux. Its fifth sidebar area is visible but p
 5. It always attempts to copy the Final URL. The `copyToClipboard` setting remains the default only for CLI and Manual Upload.
 6. Clipboard failure preserves the completed upload as success with a privacy-safe warning and offers `Copy Final URL` against the existing result. It never repeats the upload merely to retry copying.
 7. It does not open or focus Upit Desktop during ordinary execution.
-8. Existing privacy-safe progress, Cancel, single-flight rejection, explicit Retry, Shortener fallback, native alert fallback, opaque action tokens, and short-lived private action state remain unchanged.
-9. Configuration Set failure may offer `Open Upit` so Setup or Repair can be completed deliberately.
+8. Existing privacy-safe progress, Cancel, single-flight rejection, explicit Retry, Shortener fallback, opaque action tokens, and short-lived private action state remain unchanged.
+9. A clean success—upload completed without warnings and the Final URL was copied—closes active progress feedback and emits one distinct silent native notification per invocation through `UNUserNotificationCenter` on macOS and Windows Toast on Windows 11. Its title is `Upload complete`, its body is `Final URL copied to clipboard.`, selecting it performs no Upit action, Upit does not replace or aggregate it, and the operating system controls display duration, history, and grouping.
+10. If clean-success notification delivery is unavailable, the helper exits silently because the Final URL is already in the clipboard. Rejection, cancellation, warnings, failures, and recovery actions retain their existing interactive feedback and native alert fallbacks.
+11. Configuration Set failure may offer `Open Upit` so Setup or Repair can be completed deliberately.
 
 ## Desktop Control Surface
 
@@ -120,16 +122,17 @@ The next specification must cover these concrete changes:
 
 1. Change File Manager Upload from `ClipboardFromConfig` to an always-copy policy while retaining nonfatal copy failure and `Copy Final URL` recovery.
 2. Clarify the Global Configuration clipboard editor text so it applies to CLI and Manual Upload, not File Manager Upload.
-3. Add platform-neutral integration state and repair boundaries to the Wails-free application layer, with thin Wails/native adapters.
-4. Add the dedicated Desktop sidebar area, independent status presentation, repair actions, OS guidance, and accessibility behavior.
-5. Make Windows repair self-contained by retaining signed registration material in the installed product.
-6. Replace consumer-facing macOS and Windows script installation with one-product installation flows while retaining scripts as development/package internals where useful.
-7. Remove user-visible `Upit File Manager Upload` / `Upit Finder Service` naming from system surfaces without hiding component names from technical documentation.
-8. Preserve existing native behavior tests and add consumer-visible tests for the new clipboard, state, repair, naming, and failure-isolation contracts.
-9. Complete signed Windows native smoke and signed/notarized/stapled macOS native smoke before claiming production readiness.
-10. Add explicit Linux Desktop behavior: visible informational area, `Not supported on Linux`, and no Repair or registration actions.
-11. Add the macOS user-facing unregister-before-removal flow and prove that the Service disappears without relying on eventual Launch Services cleanup.
-12. Prove Windows Repair rejects missing, unsigned, untrusted, or mismatched registration inputs and directs the user to reinstall.
+3. Replace blocking clean-success completion with the ADR 0020 contract: close progress feedback, use silent `UNUserNotificationCenter` and Windows Toast notifications, and remove the clean-success modal fallback while preserving actionable outcomes.
+4. Add platform-neutral integration state and repair boundaries to the Wails-free application layer, with thin Wails/native adapters.
+5. Add the dedicated Desktop sidebar area, independent status presentation, repair actions, OS guidance, and accessibility behavior.
+6. Make Windows repair self-contained by retaining signed registration material in the installed product.
+7. Replace consumer-facing macOS and Windows script installation with one-product installation flows while retaining scripts as development/package internals where useful.
+8. Remove user-visible `Upit File Manager Upload` / `Upit Finder Service` naming from system surfaces without hiding component names from technical documentation.
+9. Preserve existing native behavior tests and add consumer-visible tests for the new clipboard, clean-success notification, state, repair, naming, and failure-isolation contracts.
+10. Complete signed Windows native smoke and signed/notarized/stapled macOS native smoke before claiming production readiness.
+11. Add explicit Linux Desktop behavior: visible informational area, `Not supported on Linux`, and no Repair or registration actions.
+12. Add the macOS user-facing unregister-before-removal flow and prove that the Service disappears without relying on eventual Launch Services cleanup.
+13. Prove Windows Repair rejects missing, unsigned, untrusted, or mismatched registration inputs and directs the user to reinstall.
 
 ## Decision Records and Domain Language
 
@@ -139,5 +142,6 @@ The next specification must cover these concrete changes:
 - ADR 0017 records the always-copy File Manager Upload contract.
 - ADR 0018 records one visible Upit product with private helpers and truthful Desktop controls.
 - ADR 0019 records one atomic product version and installer identity.
+- ADR 0020 records native, silent, non-activating clean-success notifications and the absence of a modal fallback after successful clipboard delivery.
 
-The next `to-spec` workflow should use this document as its confirmed design input. It must explicitly supersede the v0.6/v0.7 clauses that made File Manager Upload honor Global Configuration clipboard behavior while preserving the remaining completed upload, privacy, native feedback, helper-lifecycle, and platform-adapter contracts.
+The next `to-spec` workflow should use this document as its confirmed design input and incorporate ADR 0020. It must explicitly supersede the v0.6/v0.7 clauses that made File Manager Upload honor Global Configuration clipboard behavior and narrow native alert fallback so a clean copied success never requires acknowledgment, while preserving the remaining completed upload, privacy, actionable feedback, helper-lifecycle, and platform-adapter contracts.
