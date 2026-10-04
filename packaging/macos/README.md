@@ -7,9 +7,9 @@ Upit targets **macOS 14 or newer on Apple Silicon**. One application contains De
 `Upit.app` contains:
 
 - `Contents/MacOS/upit-desktop`: the existing Wails Desktop application;
+- `Contents/Helpers/upit`: the private standalone CLI payload;
 - `Contents/Helpers/UpitFinderService.app`: the background-only `NSServices` provider;
 - `Contents/Helpers/UpitFinderService.app/Contents/Helpers/UpitFileManager.app`: the Wails-free one-shot helper.
-
 The Finder provider accepts exactly one local regular file URL and passes the untrusted URL to the shared Go helper as `--file-url`. It does not load configuration, upload bytes, parse CLI output, render private values, or remain resident. The Go helper converts and validates the URL, then invokes the existing File Manager Upload service.
 
 The package is intentionally **not App Sandbox**. Finder, Desktop, and CLI must read the same fixed `~/.config/upit/` Configuration Set. Finder Sync, Share Extensions, Action Extensions, Automator workflows, and Mac App Store distribution are not used.
@@ -19,11 +19,10 @@ The package is intentionally **not App Sandbox**. Finder, Desktop, and CLI must 
 On a macOS 14+ Apple Silicon host with Go, Node.js, npm, Xcode Command Line Tools, and `clang`:
 
 ```bash
-make setup-desktop
-make package-macos MACOS_VERSION=0.7.0
+make package
 ```
 
-The output is an unsigned verification DMG under `dist/macos/`. The package script validates the app layout and Finder Service metadata before creating the DMG.
+The output is an unsigned verification DMG under `dist/macos/`, with version `0.0.0` by default or `VERSION=X.Y.Z`. Packaging installs locked frontend dependencies and uses per-run `.build/package/` staging; that run is removed on success and failure. `make clean` also removes interrupted staging. Run `bash packaging/package-smoke.sh 0.0.0` to build, mount, verify bundle/CLI/metadata/checksum, and check staging cleanup.
 
 ## Installation and removal
 
@@ -39,28 +38,27 @@ The output is an unsigned verification DMG under `dist/macos/`. The package scri
 Only the protected SemVer-tag workflow may provide signing and notarization credentials:
 
 ```bash
-UPIT_PROTECTED_RELEASE=true make package-macos \
-  MACOS_VERSION=0.7.0 \
+UPIT_PROTECTED_RELEASE=true make package \
+  VERSION=0.7.0 \
   MACOS_PROTECTED_TAG=v0.7.0 \
   MACOS_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)' \
   MACOS_NOTARY_PROFILE=upit-release
 ```
 
-The workflow signs the desktop binary, Finder Service executable and bundle, nested helper executable and bundle, and outer app with Hardened Runtime. It verifies signatures, submits the distributable DMG to Apple notarization, staples and validates the DMG ticket, writes SHA-256 checksums and metadata, runs the protected native smoke, and publishes only after smoke evidence is present.
+The workflow signs the private CLI, Desktop binary, Finder Service executable and bundle, nested helper executable and bundle before signing the outer app with Hardened Runtime. It verifies signatures, submits the distributable DMG to Apple notarization, staples and validates the DMG ticket, writes SHA-256 checksums and metadata, runs the protected native smoke, and publishes only after smoke evidence is present.
 
 Ordinary pull requests and branch pushes build unsigned artifacts and never receive release secrets.
 
 ## Native smoke
 
-`native-smoke.sh` requires a real macOS 14+ Apple Silicon host. It installs the bundle into a supplied directory, prepares a temporary Configuration Set and local HTTP endpoint, opens a Finder fixture, prompts for the native Finder lifecycle assertions, runs the unchanged CLI regression when supplied, writes JSON evidence, and unregisters/removes the Service during cleanup.
+`native-smoke.sh` requires a real macOS 14+ Apple Silicon host. It installs the bundle into a supplied directory, prepares a temporary Configuration Set and local HTTP endpoint, opens a Finder fixture, prompts for native Finder lifecycle assertions, executes CLI regression through the installed `Contents/Helpers/upit` payload, writes JSON evidence, and unregisters/removes the Service during cleanup.
 
 To run:
 
 ```bash
 bash packaging/macos/native-smoke.sh \
-  --app dist/macos/Upit.app \
+  --app /path/to/mounted/Upit.app \
   --install-directory /Applications \
-  --cli bin/upit-darwin-arm64 \
   --evidence native-smoke-evidence.json \
   [--require-signature]
 ```

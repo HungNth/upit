@@ -8,18 +8,29 @@ BUILD_VERSION=""
 SIGNING_IDENTITY=""
 NOTARY_PROFILE=""
 PROTECTED_TAG=""
+CLI_BINARY=""
+DESKTOP_BINARY=""
+FILE_MANAGER_BINARY=""
+ADAPTER_BINARY=""
+WORK_DIRECTORY=""
 
 usage() {
     cat <<'EOF'
-Usage: packaging/macos/package.sh --version X.Y.Z [options]
+Usage: packaging/macos/package.sh --version X.Y.Z --cli-binary PATH --desktop-binary PATH --helper-binary PATH [options]
 
 Options:
-  --source-root PATH       Repository root (default: detected repository root)
-  --output-directory PATH  Artifact directory (default: dist/macos)
-  --build-version VALUE    CFBundleVersion (default: semantic version)
-  --signing-identity NAME  Developer ID Application identity for protected releases
-  --notary-profile NAME    xcrun notarytool keychain profile for protected releases
-  --protected-tag TAG      Protected SemVer tag, for example v0.7.0
+  --source-root PATH        Repository root (default: detected repository root)
+  --output-directory PATH   Artifact directory (default: dist/macos)
+  --version VALUE           Product semantic version (required)
+  --build-version VALUE     CFBundleVersion (default: semantic version)
+  --cli-binary PATH         Staged standalone upit CLI binary (required)
+  --desktop-binary PATH     Staged upit-desktop binary (required)
+  --helper-binary PATH      Staged upit-file-manager helper binary (required)
+  --adapter-binary PATH     Staged UpitFinderService adapter binary (required)
+  --work-directory PATH     Package staging workspace directory (required)
+  --signing-identity NAME   Developer ID Application identity for protected releases
+  --notary-profile NAME     xcrun notarytool keychain profile for protected releases
+  --protected-tag TAG       Protected SemVer tag, for example v0.7.0
 EOF
 }
 
@@ -29,6 +40,11 @@ while (($# > 0)); do
         --output-directory) OUTPUT_DIRECTORY="$2"; shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
         --build-version) BUILD_VERSION="$2"; shift 2 ;;
+        --cli-binary) CLI_BINARY="$2"; shift 2 ;;
+        --desktop-binary) DESKTOP_BINARY="$2"; shift 2 ;;
+        --helper-binary) FILE_MANAGER_BINARY="$2"; shift 2 ;;
+        --adapter-binary) ADAPTER_BINARY="$2"; shift 2 ;;
+        --work-directory) WORK_DIRECTORY="$2"; shift 2 ;;
         --signing-identity) SIGNING_IDENTITY="$2"; shift 2 ;;
         --notary-profile) NOTARY_PROFILE="$2"; shift 2 ;;
         --protected-tag) PROTECTED_TAG="$2"; shift 2 ;;
@@ -45,25 +61,28 @@ if [[ -z "$BUILD_VERSION" ]]; then
     BUILD_VERSION="$VERSION"
 fi
 if [[ ! "$BUILD_VERSION" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]]; then
-    echo "--build-version must contain only dot-separated numeric components." >&2
+    echo "--build-version must contain 1 to 4 numeric components." >&2
     exit 2
 fi
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
-    echo "macOS File Manager Upload packages require a macOS arm64 host." >&2
+    echo "macOS 14+ Apple Silicon is required to build the package." >&2
     exit 1
 fi
 
-DESKTOP_BINARY="$SOURCE_ROOT/bin/upit-desktop"
-FILE_MANAGER_BINARY="$SOURCE_ROOT/bin/upit-file-manager"
-SERVICE_SOURCE="$SOURCE_ROOT/native/macos/finder-service/main.m"
-SELECTION_SOURCE="$SOURCE_ROOT/native/macos/finder-service/selection.m"
+if [[ -z "$CLI_BINARY" || -z "$DESKTOP_BINARY" || -z "$FILE_MANAGER_BINARY" || -z "$ADAPTER_BINARY" || -z "$WORK_DIRECTORY" ]]; then
+    echo "Explicit staged CLI, Desktop, helper, adapter, and workspace inputs are required." >&2
+    exit 2
+fi
+
 ENTITLEMENTS="$SOURCE_ROOT/packaging/macos/entitlements.plist"
-for input in "$DESKTOP_BINARY" "$FILE_MANAGER_BINARY" "$SERVICE_SOURCE" "$SELECTION_SOURCE" "$ENTITLEMENTS"; do
+
+for input in "$CLI_BINARY" "$DESKTOP_BINARY" "$FILE_MANAGER_BINARY" "$ADAPTER_BINARY" "$ENTITLEMENTS"; do
     if [[ ! -f "$input" ]]; then
         echo "Required package input is missing: $input" >&2
         exit 1
     fi
 done
+
 
 if [[ -n "$SIGNING_IDENTITY" || -n "$NOTARY_PROFILE" || -n "$PROTECTED_TAG" ]]; then
     if [[ "$PROTECTED_TAG" != v[0-9]*.[0-9]*.[0-9]* ]]; then
@@ -85,17 +104,18 @@ if [[ -n "$SIGNING_IDENTITY" || -n "$NOTARY_PROFILE" || -n "$PROTECTED_TAG" ]]; 
 fi
 
 mkdir -p "$OUTPUT_DIRECTORY"
-work_directory="$(mktemp -d "${TMPDIR:-/tmp}/upit-macos-package.XXXXXX")"
-trap 'rm -rf "$work_directory"' EXIT
+
+work_directory="$WORK_DIRECTORY"
+mkdir -p "$work_directory"
 
 render_plist() {
     local template="$1"
-    local destination="$2"
+    local output="$2"
     local content
     content="$(<"$template")"
     content="${content//@VERSION@/$VERSION}"
     content="${content//@BUILD_VERSION@/$BUILD_VERSION}"
-    printf '%s\n' "$content" > "$destination"
+    printf '%s\n' "$content" > "$output"
 }
 
 app="$work_directory/Upit.app"
@@ -103,22 +123,23 @@ service_app="$app/Contents/Helpers/UpitFinderService.app"
 file_manager_app="$service_app/Contents/Helpers/UpitFileManager.app"
 mkdir -p \
     "$app/Contents/MacOS" \
+    "$app/Contents/Helpers" \
     "$app/Contents/Resources" \
     "$service_app/Contents/MacOS" \
     "$service_app/Contents/Helpers" \
     "$file_manager_app/Contents/MacOS"
 
 cp "$DESKTOP_BINARY" "$app/Contents/MacOS/upit-desktop"
+cp "$CLI_BINARY" "$app/Contents/Helpers/upit"
 cp "$FILE_MANAGER_BINARY" "$file_manager_app/Contents/MacOS/upit-file-manager"
 render_plist "$SOURCE_ROOT/packaging/macos/desktop-Info.plist.in" "$app/Contents/Info.plist"
 render_plist "$SOURCE_ROOT/native/macos/finder-service/Info.plist.in" "$service_app/Contents/Info.plist"
 render_plist "$SOURCE_ROOT/packaging/macos/file-manager-Info.plist.in" "$file_manager_app/Contents/Info.plist"
 
-clang -fobjc-arc -mmacosx-version-min=14.0 -framework Cocoa \
-    "$SERVICE_SOURCE" \
-    "$SELECTION_SOURCE" \
-    -o "$service_app/Contents/MacOS/UpitFinderService"
+cp "$ADAPTER_BINARY" "$service_app/Contents/MacOS/UpitFinderService"
+
 chmod +x "$app/Contents/MacOS/upit-desktop" \
+    "$app/Contents/Helpers/upit" \
     "$service_app/Contents/MacOS/UpitFinderService" \
     "$file_manager_app/Contents/MacOS/upit-file-manager"
 
@@ -130,13 +151,15 @@ sign_binary() {
 
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     sign_binary "$file_manager_app/Contents/MacOS/upit-file-manager"
-    sign_binary "$service_app/Contents/MacOS/UpitFinderService"
     sign_binary "$file_manager_app"
+    sign_binary "$service_app/Contents/MacOS/UpitFinderService"
     sign_binary "$service_app"
+    sign_binary "$app/Contents/Helpers/upit"
     sign_binary "$app/Contents/MacOS/upit-desktop"
     sign_binary "$app"
     codesign --verify --deep --strict --verbose=2 "$app"
 fi
+
 validate_args=(--app "$app")
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     validate_args+=(--require-signature)

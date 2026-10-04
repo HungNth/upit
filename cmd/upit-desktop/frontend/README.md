@@ -6,19 +6,15 @@ Run every command below from the repository root.
 
 ## Setup and build
 
-Install frontend dependencies after cloning or changing `package-lock.json`:
+Build the complete native Desktop package on supported macOS or Windows hosts:
 
 ```bash
-make setup-desktop
+make package VERSION=0.0.0
 ```
 
-Build the frontend and then the desktop binary:
+Packaging installs dependencies from `package-lock.json`, type-checks Vue, and bundles JavaScript/CSS into frontend `dist/` before compiling Desktop into private `.build/package/` staging. The installer is written under the repository-root `dist/`; no Desktop executable is left in `bin/`. Host development toolchains remain prerequisites; see the platform packaging READMEs.
 
-```bash
-make build-desktop
-```
-
-The frontend step type-checks Vue and writes bundled JavaScript and CSS to `dist/`. The Go step then embeds that output into `bin/upit-desktop`. The generated `dist/` files are committed so the Go package remains buildable from a clean checkout.
+For frontend-only development, use `npm --prefix cmd/upit-desktop/frontend ci`, then `npm --prefix cmd/upit-desktop/frontend run build` or `run dev`. The committed frontend `dist/` remains an input for Go compilation from a clean checkout. `make clean` removes repository-root generated output, not that committed directory.
 
 ## Wails bindings
 
@@ -28,7 +24,7 @@ Regenerate bindings only after changing an exported Go service method or model u
 
 ```bash
 make generate-desktop-bindings
-make build-desktop
+make package
 ```
 
 The generated `bindings/` files are committed and must not be edited manually.

@@ -38,8 +38,9 @@ file_manager_info="$file_manager_app/Contents/Info.plist"
 service_binary="$service_app/Contents/MacOS/UpitFinderService"
 desktop_binary="$APP_PATH/Contents/MacOS/upit-desktop"
 file_manager_binary="$file_manager_app/Contents/MacOS/upit-file-manager"
+cli_binary="$APP_PATH/Contents/Helpers/upit"
 
-for input in "$root_info" "$service_info" "$file_manager_info" "$service_binary" "$desktop_binary" "$file_manager_binary"; do
+for input in "$root_info" "$service_info" "$file_manager_info" "$service_binary" "$desktop_binary" "$file_manager_binary" "$cli_binary"; do
     if [[ ! -e "$input" ]]; then
         echo "Required package member is missing: $input" >&2
         exit 1
@@ -52,6 +53,10 @@ done
 
 product_version="$(plutil -extract CFBundleShortVersionString raw -o - "$root_info")"
 build_version="$(plutil -extract CFBundleVersion raw -o - "$root_info")"
+if [[ ! "$product_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build_version" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]]; then
+    echo "Package version metadata must be numeric and fully rendered." >&2
+    exit 1
+fi
 for plist in "$root_info" "$service_info" "$file_manager_info"; do
     if [[ "$(plutil -extract CFBundleName raw -o - "$plist")" != "Upit" ||
           "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" != "$product_version" ||
@@ -86,7 +91,11 @@ for plist in "$service_info" "$file_manager_info"; do
     fi
 done
 
-for binary in "$service_binary" "$desktop_binary" "$file_manager_binary"; do
+for binary in "$service_binary" "$desktop_binary" "$file_manager_binary" "$cli_binary"; do
+    if [[ ! -x "$binary" ]]; then
+        echo "Package member is not executable: $binary" >&2
+        exit 1
+    fi
     if [[ "$(lipo -archs "$binary")" != *arm64* ]]; then
         echo "Package member is not an Apple Silicon Mach-O: $binary" >&2
         exit 1
@@ -99,13 +108,11 @@ for binary in "$service_binary" "$desktop_binary" "$file_manager_binary"; do
 done
 
 if [[ "$REQUIRE_SIGNATURE" == 1 ]]; then
+    codesign --verify --strict --verbose=2 "$cli_binary" >/dev/null
     for bundle in "$file_manager_app" "$service_app" "$APP_PATH"; do
         codesign --verify --deep --strict --verbose=2 "$bundle" >/dev/null
     done
-    entitlements="$(mktemp "${TMPDIR:-/tmp}/upit-entitlements.XXXXXX")"
-    trap 'rm -f "$entitlements"' EXIT
-    codesign -d --entitlements :- "$APP_PATH" >"$entitlements" 2>/dev/null || true
-    if grep -q 'com.apple.security.app-sandbox' "$entitlements"; then
+    if codesign -d --entitlements :- "$APP_PATH" 2>/dev/null | grep -q 'com.apple.security.app-sandbox'; then
         echo "App Sandbox is not supported for the fixed Configuration Set contract." >&2
         exit 1
     fi

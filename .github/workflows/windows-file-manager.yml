@@ -28,29 +28,81 @@ jobs:
           node-version: '22.x'
           cache: npm
           cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
-      - name: Install frontend dependencies
-        run: npm --prefix cmd/upit-desktop/frontend ci
       - name: Install NSIS build tool
         shell: pwsh
         run: |
           choco install nsis --yes --no-progress
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
-      - name: Build CLI for the unified payload
-        run: make build
-      - name: Build desktop and one-shot helper
-        run: make build-desktop
+      - name: Run unified CLI and clean smoke
+        shell: bash
+        run: bash packaging/command-smoke.sh
       - name: Run Go tests
         run: go test ./...
       - name: Run Go race tests
         run: go test -race ./...
       - name: Run Go vet
         run: go vet ./...
-      - name: Validate unsigned package inputs
-        shell: pwsh
-        run: .\packaging\windows\validate.ps1 -Version 0.6.0.0 -Publisher 'CN=Upit Development'
       - name: Build unsigned verification package
+        run: make package
+      - name: Verify package metadata, artifact shape, and staging cleanup
         shell: pwsh
-        run: .\packaging\windows\package.ps1 -Version 0.6.0.0 -Publisher 'CN=Upit Development'
+        run: |
+          $distFiles = Get-ChildItem dist/windows -File
+          if ($distFiles.Count -ne 3) {
+            throw "dist/windows must contain exactly 3 files, found: $($distFiles.Count)"
+          }
+          $installer = Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'Consumer installer setup.exe was not produced.' }
+          $checksum = Get-Item "$($installer.FullName).sha256" -ErrorAction Stop
+          $metadataFile = Get-Item "$($installer.FullName).metadata.json" -ErrorAction Stop
+
+          $expectedHash = ((Get-Content $checksum.FullName -Raw) -split '\s+')[0]
+          $actualHash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          if ($expectedHash -ne $actualHash) { throw 'Installer checksum does not match sha256 sidecar.' }
+
+          $metadata = Get-Content $metadataFile.FullName -Raw | ConvertFrom-Json
+          if ($metadata.name -ne 'Upit') { throw "Expected metadata name 'Upit', got '$($metadata.name)'" }
+          if ($metadata.version -ne '0.0.0') { throw "Expected metadata version '0.0.0', got '$($metadata.version)'" }
+          if ($metadata.technicalVersion -ne '0.0.0.0') { throw "Expected metadata technicalVersion '0.0.0.0', got '$($metadata.technicalVersion)'" }
+          if ($metadata.platform -ne 'windows') { throw "Expected metadata platform 'windows', got '$($metadata.platform)'" }
+          if ($metadata.architecture -ne 'x64') { throw "Expected metadata architecture 'x64', got '$($metadata.architecture)'" }
+          if ($metadata.signed -ne $false) { throw "Expected unsigned package metadata, got signed=$($metadata.signed)" }
+          if ($metadata.installer -ne (Split-Path $installer.FullName -Leaf)) { throw 'Metadata installer filename mismatch.' }
+
+          if (Test-Path bin) {
+            $binFiles = Get-ChildItem bin -File
+            foreach ($file in $binFiles) {
+              if ($file.Name -ne 'upit.exe') {
+                throw "bin must contain only upit.exe, found unexpected file: $($file.Name)"
+              }
+            }
+          }
+
+          if (Test-Path .build/package) {
+            $stagedItems = Get-ChildItem .build/package
+            if ($stagedItems.Count -ne 0) {
+              throw ".build/package must be empty after successful package build, found items: $($stagedItems.Count)"
+            }
+          }
+      - name: Verify package failure cleanup seam
+        shell: pwsh
+        run: |
+          $previousGoFlags = $env:GOFLAGS
+          $env:GOFLAGS = '-upit-invalid-package-smoke-flag'
+          $PSNativeCommandUseErrorActionPreference = $false
+          try {
+            make package
+            $failed = $LASTEXITCODE -ne 0
+          } finally {
+            $env:GOFLAGS = $previousGoFlags
+          }
+          if (-not $failed) { throw 'Expected make package to fail with invalid GOFLAGS.' }
+          if (Test-Path .build/package) {
+            $stagedItems = Get-ChildItem .build/package
+            if ($stagedItems.Count -ne 0) {
+              throw ".build/package must be empty after failed packaging, found items: $($stagedItems.Count)"
+            }
+          }
       - name: Upload unsigned artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -84,17 +136,11 @@ jobs:
           node-version: '22.x'
           cache: npm
           cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
-      - name: Install frontend dependencies
-        run: npm --prefix cmd/upit-desktop/frontend ci
       - name: Install NSIS build tool
         shell: pwsh
         run: |
           choco install nsis --yes --no-progress
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
-      - name: Build desktop and one-shot helper
-        run: make build-desktop
-      - name: Build CLI for continuity smoke
-        run: make build
       - name: Decode signing certificate
         shell: pwsh
         env:
@@ -106,14 +152,13 @@ jobs:
         shell: pwsh
         env:
           UPIT_PROTECTED_RELEASE: 'true'
-          UPIT_MSIX_PUBLISHER: ${{ secrets.UPIT_MSIX_PUBLISHER }}
-          UPIT_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.UPIT_WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_PUBLISHER: ${{ secrets.UPIT_MSIX_PUBLISHER }}
+          WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}\upit-signing.pfx
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.UPIT_WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_PROTECTED_TAG: ${{ github.ref_name }}
         run: |
-          .\packaging\windows\release.ps1 `
-            -Tag $env:GITHUB_REF_NAME `
-            -Publisher $env:UPIT_MSIX_PUBLISHER `
-            -CertificatePath (Join-Path $env:RUNNER_TEMP 'upit-signing.pfx') `
-            -CertificatePassword $env:UPIT_WINDOWS_CERTIFICATE_PASSWORD
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          make package VERSION=$version
       - name: Verify signed consumer installation and cleanup
         shell: pwsh
         run: |

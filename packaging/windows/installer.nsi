@@ -6,6 +6,9 @@ Unicode true
 !ifndef UPIT_VERSION
 !error "UPIT_VERSION is required"
 !endif
+!ifndef UPIT_TECHNICAL_VERSION
+!error "UPIT_TECHNICAL_VERSION is required"
+!endif
 !ifndef UPIT_PAYLOAD
 !error "UPIT_PAYLOAD is required"
 !endif
@@ -17,11 +20,11 @@ Name "Upit"
 OutFile "${UPIT_OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\Upit"
 RequestExecutionLevel user
-VIProductVersion "${UPIT_VERSION}"
+VIProductVersion "${UPIT_TECHNICAL_VERSION}"
 VIAddVersionKey "ProductName" "Upit"
 VIAddVersionKey "FileDescription" "Upit Installer"
 VIAddVersionKey "ProductVersion" "${UPIT_VERSION}"
-VIAddVersionKey "FileVersion" "${UPIT_VERSION}"
+VIAddVersionKey "FileVersion" "${UPIT_TECHNICAL_VERSION}"
 VIAddVersionKey "LegalCopyright" "Upit contributors"
 
 Var PreviousPath

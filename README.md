@@ -52,27 +52,22 @@ make build
 ./bin/upit --help
 ```
 
-Build Upit Desktop and the Wails-free File Manager Upload helper from the repository root:
+Package the complete native Desktop product on macOS 14+ Apple Silicon or Windows 11 x64:
 
 ```bash
-# First clone, or after package-lock.json changes.
-make setup-desktop
-
-# Type-checks/bundles the frontend, builds the helper, then embeds the frontend in upit-desktop.
-make build-desktop
-./bin/upit-desktop
-./bin/upit-file-manager.exe <one-regular-file>   # Windows
-./bin/upit-file-manager <one-regular-file>       # macOS/Linux
+make package                 # unsigned local verification; VERSION defaults to 0.0.0
+make package VERSION=0.7.0   # one product version for every package component
 ```
 
-On a macOS 14+ Apple Silicon host, build and package the Finder Service integration with:
+The command installs locked frontend dependencies, type-checks/bundles the frontend, and builds the CLI, Desktop, private File Manager helper, and native adapter. macOS produces a DMG; Windows produces a setup executable. Checksums and metadata accompany the installer under `dist/`. Linux supports `make build`, but rejects Desktop packaging with a nonzero error.
 
-```bash
-make build-macos
-make package-macos MACOS_VERSION=0.7.0
-```
+`bin/` is reserved for the standalone native CLI (`upit.exe` on Windows). Installer inputs use per-run temporary directories under `.build/package/`, cleaned on success and failure. The packaged CLI stays private: installation does not modify `PATH` or create a CLI shortcut. `make clean` removes `bin/`, `.build/` (including interrupted package runs), and repository-root `dist/`; it does not remove committed frontend assets or configuration.
 
-`make package-macos` creates an unsigned verification DMG unless protected-tag signing and notarization variables are supplied. See [`packaging/macos/README.md`](packaging/macos/README.md). `make generate-desktop-bindings` is only needed after changing an exported desktop Go method or model.
+Machine prerequisites are installed separately: Go, Node.js/npm, macOS Xcode Command Line Tools, or Windows Visual Studio/CMake, Windows SDK, and NSIS. Protected CI invokes the same `make package` command with signing/notarization credentials and protected-tag gates. Unsigned artifacts prove package shape, not trusted installation or Finder/Explorer behavior. See [macOS packaging](packaging/macos/README.md) and [Windows packaging](packaging/windows/README.md).
+
+`make generate-desktop-bindings` remains an explicit maintenance command after exported Desktop Go methods or models change; routine packaging does not regenerate bindings. CLI run, tests, race tests, vet, format, cleanup, and help remain available.
+
+Verify the CLI/output contract with `bash packaging/command-smoke.sh` (removes generated output). Platform package checks and protected native smoke remain separate.
 
 ## Upit Desktop and File Manager Upload
 

@@ -3,7 +3,6 @@ set -euo pipefail
 
 APP_PATH=""
 INSTALL_DIRECTORY="/Applications"
-CLI_PATH=""
 EVIDENCE_PATH="native-smoke-evidence.json"
 REQUIRE_SIGNATURE=0
 
@@ -14,8 +13,7 @@ Usage: packaging/macos/native-smoke.sh --app PATH [options]
 Options:
   --app PATH                Upit.app to install and smoke
   --install-directory PATH  Installation directory (default: /Applications)
-  --cli PATH                Existing upit CLI for continuity regression
-  --evidence PATH            Evidence JSON path (default: native-smoke-evidence.json)
+  --evidence PATH           Evidence JSON path (default: native-smoke-evidence.json)
   --require-signature       Require codesign verification for the installed bundle
 EOF
 }
@@ -24,7 +22,6 @@ while (($# > 0)); do
     case "$1" in
         --app) APP_PATH="$2"; shift 2 ;;
         --install-directory) INSTALL_DIRECTORY="$2"; shift 2 ;;
-        --cli) CLI_PATH="$2"; shift 2 ;;
         --evidence) EVIDENCE_PATH="$2"; shift 2 ;;
         --require-signature) REQUIRE_SIGNATURE=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -41,13 +38,6 @@ unset UPIT_FILE_MANAGER_HEADLESS
 if [[ -z "$APP_PATH" || ! -d "$APP_PATH" ]]; then
     echo "--app must point to an existing Upit.app bundle." >&2
     exit 2
-fi
-if [[ -z "$CLI_PATH" && -x "$PWD/bin/upit-darwin-arm64" ]]; then
-	CLI_PATH="$PWD/bin/upit-darwin-arm64"
-fi
-if [[ -z "$CLI_PATH" || ! -x "$CLI_PATH" ]]; then
-	echo "--cli must point to the unchanged macOS CLI binary." >&2
-	exit 2
 fi
 read_bool() {
     local prompt="$1"
@@ -178,13 +168,14 @@ if ! read_bool "Deliberately unregister this test Service, use Desktop Repair to
 if ! read_bool "Confirm only Upit is user-visible, with no separate helper application, then quit Desktop before Finder uploads"; then exit 1; fi
 open "$fixture_directory"
 
-if [[ -n "$CLI_PATH" ]]; then
-    "$CLI_PATH" config validate >/dev/null
-    "$CLI_PATH" upload --no-clipboard "$fixture_directory/upit-smoke.txt" >/dev/null
-    cli_regression=true
-else
-    cli_regression=false
+installed_cli="$installed_app/Contents/Helpers/upit"
+if [[ ! -x "$installed_cli" ]]; then
+    echo "Installed packaged CLI is missing or not executable at $installed_cli." >&2
+    exit 1
 fi
+"$installed_cli" config validate >/dev/null
+"$installed_cli" upload --no-clipboard "$fixture_directory/upit-smoke.txt" >/dev/null
+cli_regression=true
 
 discovery=false
 selection_rejection=false
