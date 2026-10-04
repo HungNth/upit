@@ -30,6 +30,11 @@ func (f *systemFeedback) Progress(update app.ManualUploadProgress) {
 	fmt.Fprintf(os.Stderr, "Upit: %s\n", update.Phase)
 }
 
+func (f *systemFeedback) Notify(notification terminalNotification) error {
+	fmt.Fprintln(os.Stderr, notification.Title+". "+notification.Body)
+	return nil
+}
+
 func (f *systemFeedback) Complete(result app.FileManagerUploadResult) (app.FileManagerActionKind, bool) {
 	fmt.Fprintln(os.Stderr, resultSummary(result))
 	return "", false

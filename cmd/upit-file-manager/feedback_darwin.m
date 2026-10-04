@@ -13,7 +13,10 @@ static const int UPIT_ACTION_DISMISS = -1;
 static _Atomic int upitAction = 0;
 static _Atomic int upitNotificationsAuthorized = 0;
 static atomic_bool upitStopEventLoop = false;
-static NSUInteger upitNotificationSequence = 0;
+static NSString *upitActiveNotificationIdentifier;
+static atomic_bool upitNotificationLaunch = false;
+static dispatch_semaphore_t upitLaunchFinished;
+static id upitLaunchObserver;
 
 @interface UpitNotificationDelegate : NSObject <UNUserNotificationCenterDelegate>
 @end
@@ -294,9 +297,12 @@ static void upitPostNotification(NSString *title, NSString *body, NSString *cate
     content.title = title;
     content.body = body;
     content.categoryIdentifier = category;
-    content.sound = [UNNotificationSound defaultSound];
+    BOOL active = [category isEqualToString:@"com.hungnth.upit.active"];
+    if (!active) {
+        content.sound = [UNNotificationSound defaultSound];
+    }
 
-    NSString *identifier = [NSString stringWithFormat:@"com.hungnth.upit.file-manager.%lu", (unsigned long)++upitNotificationSequence];
+    NSString *identifier = active ? upitActiveNotificationIdentifier : NSUUID.UUID.UUIDString;
     UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier
                                                                             content:content
                                                                             trigger:nil];
@@ -334,6 +340,11 @@ static void upitStopFallback(void) {
 void upitFeedbackBegin(void) {
     @autoreleasepool {
         atomic_store(&upitAction, 0);
+#if !__has_feature(objc_arc)
+        [upitActiveNotificationIdentifier release];
+#endif
+        // cgo builds this file without ARC; keep the identifier past this pool.
+        upitActiveNotificationIdentifier = [NSUUID.UUID.UUIDString copy];
         upitConfigureNotifications();
         upitRegisterActiveCategory();
         if (atomic_load(&upitNotificationsAuthorized) == 1) {
@@ -364,6 +375,33 @@ void upitFeedbackComplete(const char *summary, int copy, int retry, int openDesk
         atomic_store(&upitAction, 0);
         upitRegisterTerminalCategory(copy != 0, retry != 0, openDesktop != 0);
         upitPostNotification(@"Upit", upitString(summary), @"com.hungnth.upit.terminal");
+    }
+}
+
+int upitFeedbackNotify(const char *identifier, const char *title, const char *body) {
+    @autoreleasepool {
+        if (atomic_load(&upitNotificationsAuthorized) != 1) {
+            return 1;
+        }
+        UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+        content.title = upitString(title);
+        content.body = upitString(body);
+        // No sound, category, userInfo, or foreground action for clean success.
+        UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:upitString(identifier)
+                                                                            content:content
+                                                                            trigger:nil];
+        dispatch_semaphore_t finished = dispatch_semaphore_create(0);
+        __block int status = 2;
+        [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request
+            withCompletionHandler:^(NSError *error) {
+                status = error == nil ? 0 : 2;
+                dispatch_semaphore_signal(finished);
+            }];
+        // Wait for API acceptance, never for user acknowledgment.
+        if (dispatch_semaphore_wait(finished, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
+            return 3;
+        }
+        return status;
     }
 }
 
@@ -400,12 +438,46 @@ int upitFeedbackNotificationsAvailable(void) {
 }
 
 void upitFeedbackClose(void) {
+    if (upitActiveNotificationIdentifier != nil) {
+        UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+        NSArray *identifiers = @[upitActiveNotificationIdentifier];
+        [center removePendingNotificationRequestsWithIdentifiers:identifiers];
+        [center removeDeliveredNotificationsWithIdentifiers:identifiers];
+#if !__has_feature(objc_arc)
+        [upitActiveNotificationIdentifier release];
+#endif
+        upitActiveNotificationIdentifier = nil;
+    }
     upitStopFallback();
     atomic_store(&upitAction, 0);
 }
 
 void upitFeedbackPrepareEventLoop(void) {
     atomic_store(&upitStopEventLoop, false);
+    atomic_store(&upitNotificationLaunch, false);
+    [NSApplication sharedApplication];
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    if (upitDelegate == nil) {
+        upitDelegate = [UpitNotificationDelegate new];
+    }
+    if ([NSBundle mainBundle].bundleIdentifier != nil) {
+        [UNUserNotificationCenter currentNotificationCenter].delegate = upitDelegate;
+    }
+    upitLaunchFinished = dispatch_semaphore_create(0);
+    upitLaunchObserver = [[NSNotificationCenter defaultCenter]
+        addObserverForName:NSApplicationDidFinishLaunchingNotification object:NSApp queue:nil
+        usingBlock:^(NSNotification *notification) {
+            atomic_store(&upitNotificationLaunch,
+                notification.userInfo[NSApplicationLaunchUserNotificationKey] != nil);
+            dispatch_semaphore_signal(upitLaunchFinished);
+        }];
+}
+
+int upitFeedbackAwaitLaunchContext(void) {
+    dispatch_semaphore_wait(upitLaunchFinished, DISPATCH_TIME_FOREVER);
+    [[NSNotificationCenter defaultCenter] removeObserver:upitLaunchObserver];
+    upitLaunchObserver = nil;
+    return atomic_load(&upitNotificationLaunch) ? 1 : 0;
 }
 
 void upitFeedbackRunEventLoop(void) {

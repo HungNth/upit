@@ -33,3 +33,10 @@ func darwinActionKind(action int) (app.FileManagerActionKind, bool) {
 		return "", false
 	}
 }
+
+func runDarwinLaunch(args []string, notificationLaunch bool) int {
+	if notificationLaunch && len(args) == 0 {
+		return 0
+	}
+	return run(args)
+}

@@ -24,6 +24,11 @@ func (*headlessFeedback) Progress(update app.ManualUploadProgress) {
 	fmt.Fprintf(os.Stderr, "Upit: %s\n", update.Phase)
 }
 
+func (*headlessFeedback) Notify(notification terminalNotification) error {
+	fmt.Fprintln(os.Stderr, notification.Title+". "+notification.Body)
+	return nil
+}
+
 func (*headlessFeedback) Complete(result app.FileManagerUploadResult) (app.FileManagerActionKind, bool) {
 	fmt.Fprintln(os.Stderr, resultSummary(result))
 	return "", false

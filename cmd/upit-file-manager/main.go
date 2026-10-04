@@ -55,7 +55,7 @@ func runUpload(ctx context.Context, runner *app.FileManagerUploadService, filePa
 	defer feedback.Close()
 	feedback.Begin(cancel)
 	result := runner.Upload(cancelCtx, []string{filePath}, feedback.Progress)
-	kind, selected := feedback.Complete(result)
+	kind, selected := completeFeedback(feedback, result)
 	if !selected {
 		cancel()
 		_ = runner.DiscardActions(result)
@@ -82,7 +82,7 @@ func runAction(ctx context.Context, runner *app.FileManagerUploadService, token 
 		cancel()
 		return finishAction(feedback, action.Kind)
 	}
-	kind, selected := feedback.Complete(*action.Upload)
+	kind, selected := completeFeedback(feedback, *action.Upload)
 	if !selected {
 		cancel()
 		_ = runner.DiscardActions(*action.Upload)

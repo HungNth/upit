@@ -10,6 +10,7 @@ package main
 void upitFeedbackBegin(void);
 void upitFeedbackProgress(const char *phase, int64_t processed, int64_t total);
 void upitFeedbackComplete(const char *summary, int copy, int retry, int openDesktop);
+int upitFeedbackNotify(const char *identifier, const char *title, const char *body);
 int upitFeedbackAlertWithActions(const char *summary, int copy, int retry, int openDesktop);
 void upitFeedbackAlert(const char *message);
 int upitFeedbackTakeAction(void);
@@ -18,11 +19,13 @@ void upitFeedbackClose(void);
 void upitFeedbackRunEventLoop(void);
 void upitFeedbackStopEventLoop(void);
 void upitFeedbackPrepareEventLoop(void);
+int upitFeedbackAwaitLaunchContext(void);
 */
 import "C"
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -50,7 +53,7 @@ func runWithPlatformLifecycle(args []string) int {
 	C.upitFeedbackPrepareEventLoop()
 	result := make(chan int, 1)
 	go func() {
-		code := run(args)
+		code := runDarwinLaunch(args, C.upitFeedbackAwaitLaunchContext() != 0)
 		C.upitFeedbackStopEventLoop()
 		result <- code
 	}()
@@ -103,6 +106,19 @@ func (f *darwinFeedback) Progress(update app.ManualUploadProgress) {
 	phase := C.CString(update.Phase)
 	defer C.free(unsafe.Pointer(phase))
 	C.upitFeedbackProgress(phase, C.int64_t(update.Processed), C.int64_t(update.Total))
+}
+
+func (f *darwinFeedback) Notify(notification terminalNotification) error {
+	identifier := C.CString(notification.ID)
+	title := C.CString(notification.Title)
+	body := C.CString(notification.Body)
+	defer C.free(unsafe.Pointer(identifier))
+	defer C.free(unsafe.Pointer(title))
+	defer C.free(unsafe.Pointer(body))
+	if status := C.upitFeedbackNotify(identifier, title, body); status != 0 {
+		return fmt.Errorf("native notification delivery unavailable or failed (%d)", status)
+	}
+	return nil
 }
 
 func (f *darwinFeedback) Complete(result app.FileManagerUploadResult) (app.FileManagerActionKind, bool) {
