@@ -60,10 +60,10 @@ try {
     & $go build -o $stagedCli (Join-Path $SourceRoot 'cmd\upit')
     if ($LASTEXITCODE -ne 0) { throw "Building CLI failed with exit code $LASTEXITCODE." }
 
-    & $go build -o $stagedFileManager (Join-Path $SourceRoot 'cmd\upit-file-manager')
+    & $go build -ldflags '-H=windowsgui' -o $stagedFileManager (Join-Path $SourceRoot 'cmd\upit-file-manager')
     if ($LASTEXITCODE -ne 0) { throw "Building file manager helper failed with exit code $LASTEXITCODE." }
 
-    & $go build -o $stagedDesktop (Join-Path $SourceRoot 'cmd\upit-desktop')
+    & $go build -ldflags '-H=windowsgui' -o $stagedDesktop (Join-Path $SourceRoot 'cmd\upit-desktop')
     if ($LASTEXITCODE -ne 0) { throw "Building desktop executable failed with exit code $LASTEXITCODE." }
 
     $packageWorkspace = Join-Path $runDir 'workspace'

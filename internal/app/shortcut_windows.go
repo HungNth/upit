@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 const UpitAUMID = "HungNth.Upit"
@@ -174,7 +176,10 @@ public class Win32Lnk : IDisposable {
 `, strings.ReplaceAll(shortcutPath, `'`, `''`), strings.ReplaceAll(targetExePath, `'`, `''`), strings.ReplaceAll(aumid, `'`, `''`))
 
 	cmd := exec.CommandContext(context.Background(), "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", psScript)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("create shortcut with AUMID failed: %s (%w)", strings.TrimSpace(string(out)), err)
@@ -293,7 +298,10 @@ public class Win32LnkReader : IDisposable {
 `, strings.ReplaceAll(shortcutPath, `'`, `''`))
 
 	cmd := exec.CommandContext(context.Background(), "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", psScript)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("read shortcut AUMID failed: %s (%w)", strings.TrimSpace(string(out)), err)

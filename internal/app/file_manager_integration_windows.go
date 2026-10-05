@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -83,7 +84,12 @@ func (a windowsIntegrationAdapter) legacyPackage(ctx context.Context, remove boo
 	if remove {
 		script = `$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $p=@(Get-AppxPackage -Name 'HungNth.Upit'); foreach($item in $p){try{Remove-AppxPackage -Package $item.PackageFullName}catch{}}; @(Get-AppxPackage -Name 'HungNth.Upit').Count`
 	}
-	out, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, errors.New("cannot inspect obsolete Upit package registration")
 	}

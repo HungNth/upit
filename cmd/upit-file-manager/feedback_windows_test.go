@@ -35,3 +35,16 @@ func TestWindowsProgressWindowClosesBeforeTerminalNotification(t *testing.T) {
 	}
 	feedback.Close()
 }
+
+func TestWindowsToastCommandSuppressesConsoleWindow(t *testing.T) {
+	cmd := newWindowsToastCommand(t.Context())
+	if cmd.SysProcAttr == nil {
+		t.Fatal("SysProcAttr is nil")
+	}
+	if !cmd.SysProcAttr.HideWindow {
+		t.Fatal("HideWindow is false")
+	}
+	if cmd.SysProcAttr.CreationFlags&windows.CREATE_NO_WINDOW == 0 {
+		t.Fatalf("CreationFlags does not contain CREATE_NO_WINDOW: 0x%x", cmd.SysProcAttr.CreationFlags)
+	}
+}

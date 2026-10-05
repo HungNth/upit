@@ -21,7 +21,7 @@ func (SystemClipboard) Copy(ctx context.Context, value string) error {
 	case "darwin":
 		return runClipboardCommand(ctx, value, "pbcopy")
 	case "windows":
-		return runClipboardCommand(ctx, value, "cmd.exe", "/c", "clip")
+		return copyWindowsClipboard(ctx, value)
 	case "linux":
 		return copyLinuxClipboard(ctx, value)
 	default:

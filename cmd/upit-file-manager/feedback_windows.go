@@ -292,11 +292,19 @@ func (f *windowsFeedback) Complete(result app.FileManagerUploadResult) (app.File
 	button := <-f.buttons
 	return actionKindForButton(button)
 }
+func newWindowsToastCommand(ctx context.Context) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", windowsToastScript)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
+	return cmd
+}
+
 func (f *windowsFeedback) Notify(notification terminalNotification) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", windowsToastScript)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd := newWindowsToastCommand(ctx)
 	return runWindowsToast(cmd, notification)
 }
 
