@@ -59,7 +59,7 @@ if ($manifest.Contains('@VERSION@') -or $manifest.Contains('@PUBLISHER@')) {
 if (-not $manifest.Contains('windows.fileExplorerContextMenus')) {
     throw 'Manifest does not register the Windows 11 Explorer context-menu extension.'
 }
-if (-not $manifest.Contains('{5C4A83F8-4D35-4C0C-B25B-2A57FDDA8BB4}')) {
+if (-not $manifest.Contains('5C4A83F8-4D35-4C0C-B25B-2A57FDDA8BB4')) {
     throw 'Manifest does not register the Explorer command CLSID.'
 }
 
