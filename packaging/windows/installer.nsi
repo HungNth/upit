@@ -45,64 +45,92 @@ Section "Upit"
  ${If} $PreviousPath != ""
   ${GetParent} "$PreviousPath" $0
   ${If} $0 != "$INSTDIR\versions"
-   MessageBox MB_ICONSTOP "The existing Upit installation path is invalid. Uninstall Upit before reinstalling."
+   MessageBox MB_ICONSTOP "The existing Upit installation path is invalid. Uninstall Upit before reinstalling." /SD IDOK
+   SetErrorLevel 1
    Abort
   ${EndIf}
  ${EndIf}
+ ClearErrors
  CreateDirectory "$INSTDIR\versions"
  GetTempFileName $PayloadPath "$INSTDIR\versions"
+ ${If} ${Errors}
+ ${OrIf} $PayloadPath == ""
+  MessageBox MB_ICONSTOP "Could not initialize payload staging directory in $INSTDIR\versions." /SD IDOK
+  SetErrorLevel 1
+  Abort
+ ${EndIf}
  Delete "$PayloadPath"
+ ClearErrors
  SetOutPath "$PayloadPath"
  File "${UPIT_PAYLOAD}\upit-desktop.exe"
  File "${UPIT_PAYLOAD}\upit-file-manager.exe"
- File "${UPIT_PAYLOAD}\upit-explorer-command.dll"
  File "${UPIT_PAYLOAD}\upit.exe"
- SetOutPath "$PayloadPath\repair"
- File /oname=Upit.msix "${UPIT_PAYLOAD}\repair\Upit.msix"
+ ${If} ${Errors}
+  MessageBox MB_ICONSTOP "Upit payload extraction failed. Staged payload was retained at $PayloadPath. Reinstall Upit." /SD IDOK
+  SetErrorLevel 1
+  Abort
+ ${EndIf}
+ ; Publish the current cleanup worker before removing the legacy package route.
+ ; A failed write must not leave a new Classic Verb with a legacy-only uninstaller.
+ SetOutPath "$INSTDIR"
+ ClearErrors
+ WriteUninstaller "$INSTDIR\Uninstall.exe"
+ ${If} ${Errors}
+  MessageBox MB_ICONSTOP "Upit could not publish its uninstaller. The previous registration and payload were retained." /SD IDOK
+  SetErrorLevel 1
+  Abort
+ ${EndIf}
  nsExec::ExecToStack /TIMEOUT=120000 '"$PayloadPath\upit-file-manager.exe" --install-integration'
  Pop $ExitCode
  Pop $Output
  ${If} $ExitCode != 0
-  ${If} $PreviousPath != ""
-   nsExec::ExecToStack /TIMEOUT=120000 '"$PreviousPath\upit-file-manager.exe" --install-integration'
-  ${Else}
-   nsExec::ExecToStack /TIMEOUT=120000 '"$PayloadPath\upit-file-manager.exe" --uninstall-integration'
-  ${EndIf}
-  Pop $0
-  Pop $1
-  ${If} $0 == 0
-   SetOutPath "$INSTDIR"
-   RMDir /r "$PayloadPath"
-   MessageBox MB_ICONSTOP "Upit registration failed. The previous registration was restored, or the failed first installation was unregistered. $Output"
-  ${Else}
-   MessageBox MB_ICONSTOP "Upit registration and rollback failed. Payload was retained at $PayloadPath. Reinstall Upit. $Output"
-  ${EndIf}
+  MessageBox MB_ICONSTOP "Upit registration failed. Staged payload was retained at $PayloadPath. $Output" /SD IDOK
+  SetErrorLevel 1
   Abort
  ${EndIf}
  SetOutPath "$INSTDIR"
- WriteUninstaller "$INSTDIR\Uninstall.exe"
- WriteRegStr HKCU "Software\Upit" "PayloadPath" "$PayloadPath"
+ ClearErrors
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit" "DisplayName" "Upit"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit" "DisplayVersion" "${UPIT_VERSION}"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit" "NoModify" 1
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit" "NoRepair" 1
  CreateShortcut "$SMPROGRAMS\Upit.lnk" "$PayloadPath\upit-desktop.exe"
+ ${If} ${Errors}
+  MessageBox MB_ICONSTOP "Upit registration succeeded, but installer metadata or shortcut creation failed. Retained payloads at $PayloadPath and previous installation." /SD IDOK
+  SetErrorLevel 1
+  Abort
+ ${EndIf}
  ${If} $PreviousPath != ""
-  RMDir /r /REBOOTOK "$PreviousPath"
+  ${If} $PreviousPath != $PayloadPath
+   ClearErrors
+   RMDir /r /REBOOTOK "$PreviousPath"
+   ${If} ${Errors}
+    MessageBox MB_ICONSTOP "Upit update succeeded, but previous payload cleanup failed at $PreviousPath." /SD IDOK
+    SetErrorLevel 1
+    Abort
+   ${EndIf}
+  ${EndIf}
  ${EndIf}
 SectionEnd
 
 Section "Uninstall"
  SetShellVarContext current
  InitPluginsDir
+ ClearErrors
  SetOutPath "$PLUGINSDIR"
  File /oname=upit-file-manager.exe "${UPIT_PAYLOAD}\upit-file-manager.exe"
+ ${If} ${Errors}
+  MessageBox MB_ICONSTOP "Upit could not extract uninstaller helper. Uninstall aborted." /SD IDOK
+  SetErrorLevel 1
+  Abort
+ ${EndIf}
  nsExec::ExecToStack /TIMEOUT=120000 '"$PLUGINSDIR\upit-file-manager.exe" --uninstall-integration'
  Pop $ExitCode
  Pop $Output
  ${If} $ExitCode != 0
-  MessageBox MB_ICONSTOP "Upit could not unregister File Manager Integration. Payload was retained. Reinstall Upit and retry removal. $Output"
+  MessageBox MB_ICONSTOP "Upit could not unregister File Manager Integration. Payload was retained. Reinstall Upit and retry removal. $Output" /SD IDOK
+  SetErrorLevel 1
   Abort
  ${EndIf}
  Delete "$SMPROGRAMS\Upit.lnk"

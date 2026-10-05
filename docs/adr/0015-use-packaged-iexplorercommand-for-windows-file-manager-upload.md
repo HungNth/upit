@@ -1,3 +1,5 @@
 # Use packaged IExplorerCommand for Windows File Manager Upload
 
+Status: superseded by ADR 0021.
+
 Upit v0.6 targets the Windows 11 x64 primary File Explorer context menu through a signed package with identity and a native `IExplorerCommand` COM adapter. The adapter does no upload work; it hands the selected path to the one-shot helper. A classic per-user registry verb was rejected because Windows 11 relegates it to “Show more options”; production packages register the command during install and remove it during uninstall, and are produced only from protected SemVer tags by the release pipeline.

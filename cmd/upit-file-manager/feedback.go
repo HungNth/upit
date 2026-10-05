@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"runtime"
 
 	"github.com/HungNth/upit/internal/app"
 )
@@ -10,7 +11,6 @@ import (
 type nativeFeedback interface {
 	Begin(context.CancelFunc)
 	Progress(app.ManualUploadProgress)
-	Notify(terminalNotification) error
 	Complete(app.FileManagerUploadResult) (app.FileManagerActionKind, bool)
 	Alert(string)
 	Close()
@@ -29,11 +29,16 @@ func completeFeedback(feedback nativeFeedback, result app.FileManagerUploadResul
 		return feedback.Complete(result)
 	}
 	feedback.Close()
-	// Windows Toast tags are limited to 16 characters; 80 random bits avoid replacement across invocations.
-	_ = feedback.Notify(terminalNotification{
-		ID:    rand.Text()[:16],
-		Title: "Upload complete",
-		Body:  "Final URL copied to clipboard.",
-	})
+	if runtime.GOOS != "windows" {
+		if notifier, ok := feedback.(interface {
+			Notify(terminalNotification) error
+		}); ok {
+			_ = notifier.Notify(terminalNotification{
+				ID:    rand.Text()[:16],
+				Title: "Upload complete",
+				Body:  "Final URL copied to clipboard.",
+			})
+		}
+	}
 	return "", false
 }

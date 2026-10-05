@@ -6,11 +6,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/HungNth/upit/internal/app"
@@ -95,15 +93,15 @@ type windowsFeedback struct {
 }
 
 type actCtxW struct {
-	cbSize                  uint32
-	dwFlags                 uint32
-	lpSource                *uint16
+	cbSize                 uint32
+	dwFlags                uint32
+	lpSource               *uint16
 	wProcessorArchitecture uint16
-	wLangId                 uint16
-	lpAssemblyDirectory     *uint16
-	lpResourceName          *uint16
-	lpApplicationName       *uint16
-	hModule                 uintptr
+	wLangId                uint16
+	lpAssemblyDirectory    *uint16
+	lpResourceName         *uint16
+	lpApplicationName      *uint16
+	hModule                uintptr
 }
 
 var (
@@ -292,13 +290,6 @@ func (f *windowsFeedback) Complete(result app.FileManagerUploadResult) (app.File
 	button := <-f.buttons
 	return actionKindForButton(button)
 }
-func (f *windowsFeedback) Notify(notification terminalNotification) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", windowsToastScript)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	return runWindowsToast(cmd, notification)
-}
 
 func (f *windowsFeedback) Alert(message string) {
 	showNativeMessage(message, messageBoxOK|messageBoxInformation)
@@ -437,35 +428,6 @@ func showNativeMessage(message string, flags uint32) {
 	caption := mustUTF16("Upit")
 	_, _ = windows.MessageBox(0, &text[0], &caption[0], flags)
 }
-
-const windowsToastScript = `
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-
-$pkg = Get-AppxPackage -Name 'HungNth.Upit'
-if ($null -eq $pkg) {
-    exit 2
-}
-$aumid = $pkg.PackageFamilyName + '!Upit'
-[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
-
-$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($aumid)
-if ($notifier.Setting -ne [Windows.UI.Notifications.NotificationSetting]::Enabled) {
-    exit 2
-}
-
-$xmlText = $env:UPIT_TOAST_XML
-
-$doc = [Windows.Data.Xml.Dom.XmlDocument]::new()
-$doc.LoadXml($xmlText)
-
-$toast = [Windows.UI.Notifications.ToastNotification]::new($doc)
-$toast.Tag = $env:UPIT_TOAST_TAG
-
-$notifier.Show($toast)
-exit 0
-`
 
 func mustUTF16(value string) []uint16 {
 	result, err := windows.UTF16FromString(value)

@@ -81,19 +81,9 @@ func RunFileManagerIntegrationInstaller(ctx context.Context, remove bool) error 
 	if runtime.GOOS != "windows" || nativeIntegrationAdapter == nil {
 		return errors.New("this integration installer lifecycle requires Windows")
 	}
-	action := "repair"
+	action := "install"
 	if remove {
 		action = "remove-registration"
 	}
-	if err := nativeIntegrationAdapter.act(ctx, action); err != nil {
-		return err
-	}
-	state, err := nativeIntegrationAdapter.inspect(ctx)
-	if err != nil {
-		return err
-	}
-	if (!remove && state.Status != IntegrationRegistered) || (remove && state.Status == IntegrationRegistered) {
-		return errors.New("Windows integration lifecycle did not reach the expected registration state")
-	}
-	return nil
+	return nativeIntegrationAdapter.act(ctx, action)
 }

@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
     [string] $Version = '0.0.0',
-    [string] $Publisher = $(if ($env:WINDOWS_PUBLISHER) { $env:WINDOWS_PUBLISHER } else { 'CN=Upit Development' }),
     [string] $CertificatePath = $env:WINDOWS_CERTIFICATE_PATH,
     [string] $CertificatePassword = $env:WINDOWS_CERTIFICATE_PASSWORD,
     [string] $TimestampServer = $(if ($env:WINDOWS_TIMESTAMP_SERVER) { $env:WINDOWS_TIMESTAMP_SERVER } else { 'http://timestamp.digicert.com' }),
@@ -12,6 +11,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# PowerShell 7 parents can put incompatible modules ahead of Windows PowerShell's.
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
 $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($env:OS -ne 'Windows_NT' -or $arch -ne 'AMD64' -or [Environment]::OSVersion.Version.Build -lt 22000) {
     throw 'Desktop packaging requires a native Windows 11 x64 host.'
@@ -65,27 +66,16 @@ try {
     & $go build -o $stagedDesktop (Join-Path $SourceRoot 'cmd\upit-desktop')
     if ($LASTEXITCODE -ne 0) { throw "Building desktop executable failed with exit code $LASTEXITCODE." }
 
-    & (Join-Path $PSScriptRoot 'validate.ps1') `
-        -Version $Version `
-        -Publisher $Publisher `
-        -SourceRoot $SourceRoot `
-        -DesktopPath $stagedDesktop `
-        -FileManagerHelperPath $stagedFileManager `
-        -CliPath $stagedCli
-
-    $stagedAdapterDll = Join-Path $runDir 'upit-explorer-command.dll'
     $packageWorkspace = Join-Path $runDir 'workspace'
     New-Item -ItemType Directory -Path $packageWorkspace -Force | Out-Null
 
     $packageArgs = @{
         Version = $Version
-        Publisher = $Publisher
         SourceRoot = $SourceRoot
         OutputDirectory = $OutputDirectory
         DesktopPath = $stagedDesktop
         FileManagerHelperPath = $stagedFileManager
         CliPath = $stagedCli
-        AdapterOutputPath = $stagedAdapterDll
         Workspace = $packageWorkspace
     }
 
@@ -96,7 +86,20 @@ try {
         if ($ProtectedTag) { $packageArgs['ProtectedTag'] = $ProtectedTag }
     }
 
-    & (Join-Path $PSScriptRoot 'package.ps1') @packageArgs
+    $packageOutput = & (Join-Path $PSScriptRoot 'package.ps1') @packageArgs
+    $installerPath = if ($packageOutput -is [array]) { $packageOutput[-1] } else { $packageOutput }
+
+    if (Test-Path -LiteralPath $runDir) {
+        Remove-Item -LiteralPath $runDir -Recurse -Force
+    }
+
+    & (Join-Path $PSScriptRoot 'validate.ps1') `
+        -InstallerPath $installerPath `
+        -Version $Version `
+        -Signed:([bool]$CertificatePath) `
+        -SourceRoot $SourceRoot
+
+    Write-Output $installerPath
 } finally {
     if (Test-Path -LiteralPath $runDir) {
         Remove-Item -LiteralPath $runDir -Recurse -Force

@@ -3,10 +3,9 @@ name: Upit Windows
 on:
   pull_request:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*.*.*'
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,219 +15,178 @@ jobs:
     name: Unsigned Windows verification
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
           cache: npm
           cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
-      - name: Install NSIS build tool
+      - name: Install NSIS
         shell: pwsh
         run: |
           choco install nsis --yes --no-progress
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
-      - name: Run unified CLI and clean smoke
+      - name: CLI and clean smoke
         shell: bash
         run: bash packaging/command-smoke.sh
-      - name: Run Go tests
+      - name: Go tests
         run: go test ./...
-      - name: Run Go race tests
+      - name: Race tests
         run: go test -race ./...
-      - name: Run Go vet
+      - name: Go vet
         run: go vet ./...
-      - name: Build unsigned verification package
+      - name: Build unsigned consumer package
         run: make package
-      - name: Verify package metadata, artifact shape, and staging cleanup
+      - name: Validate consumer sidecars and output boundaries
         shell: pwsh
         run: |
-          $distFiles = Get-ChildItem dist/windows -File
-          if ($distFiles.Count -ne 3) {
-            throw "dist/windows must contain exactly 3 files, found: $($distFiles.Count)"
-          }
-          $installer = Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1
-          if ($null -eq $installer) { throw 'Consumer installer setup.exe was not produced.' }
-          $checksum = Get-Item "$($installer.FullName).sha256" -ErrorAction Stop
-          $metadataFile = Get-Item "$($installer.FullName).metadata.json" -ErrorAction Stop
-
-          $expectedHash = ((Get-Content $checksum.FullName -Raw) -split '\s+')[0]
-          $actualHash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
-          if ($expectedHash -ne $actualHash) { throw 'Installer checksum does not match sha256 sidecar.' }
-
-          $metadata = Get-Content $metadataFile.FullName -Raw | ConvertFrom-Json
-          if ($metadata.name -ne 'Upit') { throw "Expected metadata name 'Upit', got '$($metadata.name)'" }
-          if ($metadata.version -ne '0.0.0') { throw "Expected metadata version '0.0.0', got '$($metadata.version)'" }
-          if ($metadata.technicalVersion -ne '0.0.0.0') { throw "Expected metadata technicalVersion '0.0.0.0', got '$($metadata.technicalVersion)'" }
-          if ($metadata.platform -ne 'windows') { throw "Expected metadata platform 'windows', got '$($metadata.platform)'" }
-          if ($metadata.architecture -ne 'x64') { throw "Expected metadata architecture 'x64', got '$($metadata.architecture)'" }
-          if ($metadata.signed -ne $false) { throw "Expected unsigned package metadata, got signed=$($metadata.signed)" }
-          if ($metadata.installer -ne (Split-Path $installer.FullName -Leaf)) { throw 'Metadata installer filename mismatch.' }
-
-          if (Test-Path bin) {
-            $binFiles = Get-ChildItem bin -File
-            foreach ($file in $binFiles) {
-              if ($file.Name -ne 'upit.exe') {
-                throw "bin must contain only upit.exe, found unexpected file: $($file.Name)"
-              }
-            }
-          }
-
-          if (Test-Path .build/package) {
-            $stagedItems = Get-ChildItem .build/package
-            if ($stagedItems.Count -ne 0) {
-              throw ".build/package must be empty after successful package build, found items: $($stagedItems.Count)"
-            }
-          }
-      - name: Verify package failure cleanup seam
+          $files = @(Get-ChildItem dist/windows -File)
+          if ($files.Count -ne 3) { throw 'Expected setup, checksum, and metadata only.' }
+          .\packaging\windows\validate.ps1 -InstallerPath dist/windows/upit-windows-x64-0.0.0-setup.exe -Version 0.0.0
+      - name: Exercise unsigned installed product
         shell: pwsh
         run: |
-          $previousGoFlags = $env:GOFLAGS
+          .\packaging\windows\native-smoke.ps1 -InstallerPath dist/windows/upit-windows-x64-0.0.0-setup.exe -InstallDirectory (Join-Path $env:RUNNER_TEMP 'Upit unsigned smoke') -AutomatedOnly -EvidencePath hosted-smoke-evidence.json
+      - name: Prove failed-build staging cleanup
+        shell: pwsh
+        run: |
+          $prior = $env:GOFLAGS
           $env:GOFLAGS = '-upit-invalid-package-smoke-flag'
           $PSNativeCommandUseErrorActionPreference = $false
           try {
             make package
             $failed = $LASTEXITCODE -ne 0
-          } finally {
-            $env:GOFLAGS = $previousGoFlags
-          }
-          if (-not $failed) { throw 'Expected make package to fail with invalid GOFLAGS.' }
-          if (Test-Path .build/package) {
-            $stagedItems = Get-ChildItem .build/package
-            if ($stagedItems.Count -ne 0) {
-              throw ".build/package must be empty after failed packaging, found items: $($stagedItems.Count)"
-            }
-          }
-      - name: Upload unsigned artifacts
+          } finally { $env:GOFLAGS = $prior }
+          if (-not $failed) { throw 'Invalid GOFLAGS must fail the package command.' }
+          if (@(Get-ChildItem .build/package -ErrorAction SilentlyContinue).Count -ne 0) { throw 'Failed build leaked private staging.' }
+      - name: Upload unsigned consumer artifact
         uses: actions/upload-artifact@v4
         with:
           name: upit-windows-x64-unsigned
           path: dist/windows/
+      - name: Upload hosted supporting evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-windows-hosted-evidence
+          path: hosted-smoke-evidence.json
 
-  signed-build:
-    name: Signed protected-tag build and hosted verification
+  release-build:
+    name: Protected release package with optional Authenticode
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: verify
     runs-on: windows-latest
     environment: upit-windows-release
-    permissions:
-      contents: read
     steps:
-      - name: Checkout protected tag
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify protected SemVer tag
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') { throw "Unsupported release tag: $env:GITHUB_REF_NAME" }
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
           cache: npm
           cache-dependency-path: cmd/upit-desktop/frontend/package-lock.json
-      - name: Install NSIS build tool
+      - name: Install NSIS
         shell: pwsh
         run: |
           choco install nsis --yes --no-progress
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
-      - name: Decode signing certificate
+      - name: Build protected SemVer package
         shell: pwsh
         env:
           CERTIFICATE_BASE64: ${{ secrets.UPIT_WINDOWS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.UPIT_WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) { throw 'Signing certificate secret is missing.' }
-          [IO.File]::WriteAllBytes((Join-Path $env:RUNNER_TEMP 'upit-signing.pfx'), [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-      - name: Build signed package
-        shell: pwsh
-        env:
-          UPIT_PROTECTED_RELEASE: 'true'
-          WINDOWS_PUBLISHER: ${{ secrets.UPIT_MSIX_PUBLISHER }}
-          WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}\upit-signing.pfx
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.UPIT_WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_PROTECTED_TAG: ${{ github.ref_name }}
-        run: |
-          $version = $env:GITHUB_REF_NAME.TrimStart('v')
-          make package VERSION=$version
-      - name: Verify signed consumer installation and cleanup
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1
-          if ($null -eq $installer -or (Get-AuthenticodeSignature $installer.FullName).Status -ne 'Valid') { throw 'Trusted consumer installer is missing.' }
-          $root = Join-Path $env:RUNNER_TEMP 'Upit'
-          $process = Start-Process $installer.FullName -ArgumentList "/S /D=$root" -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw 'Consumer installation failed.' }
-          $payload = (Get-ItemProperty 'HKCU:\Software\Upit').PayloadPath
-          foreach ($name in @('upit.exe','upit-desktop.exe','upit-file-manager.exe','upit-explorer-command.dll','repair\Upit.msix')) {
-            if ((Get-AuthenticodeSignature (Join-Path $payload $name)).Status -ne 'Valid') { throw "Untrusted installed payload: $name" }
+          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') { throw 'A protected SemVer tag is required.' }
+          $certificate = Join-Path $env:RUNNER_TEMP 'upit-signing.pfx'
+          try {
+            if (-not [string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) {
+              [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+              $env:WINDOWS_CERTIFICATE_PATH = $certificate
+              $env:WINDOWS_CERTIFICATE_PASSWORD = $env:CERTIFICATE_PASSWORD
+              $env:WINDOWS_PROTECTED_TAG = $env:GITHUB_REF_NAME
+              $env:UPIT_PROTECTED_RELEASE = 'true'
+            }
+            make package VERSION=$($env:GITHUB_REF_NAME.Substring(1))
+            if ($LASTEXITCODE -ne 0) { throw 'Protected package build failed.' }
+          } finally {
+            Remove-Item -LiteralPath $certificate -Force -ErrorAction SilentlyContinue
           }
-          if ($null -eq (Get-AppxPackage -Name 'HungNth.Upit')) { throw 'Consumer installation did not register package identity.' }
-          Remove-ItemProperty 'HKCU:\Software\Upit' -Name PayloadPath
-          $process = Start-Process (Join-Path $root 'Uninstall.exe') -ArgumentList '/S' -PassThru -Wait
-          if ($process.ExitCode -ne 0 -or (Get-AppxPackage -Name 'HungNth.Upit')) { throw 'Consumer uninstall did not remove registration.' }
-      - name: Upload signed consumer installer for protected smoke
+      - name: Verify release artifact and optional trust
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $installer = (Get-Item "dist/windows/upit-windows-x64-$version-setup.exe").FullName
+          $metadata = Get-Content "$installer.metadata.json" -Raw | ConvertFrom-Json
+          .\packaging\windows\validate.ps1 -InstallerPath $installer -Version $version -Signed:$metadata.signed
+          .\packaging\windows\native-smoke.ps1 -InstallerPath $installer -InstallDirectory (Join-Path $env:RUNNER_TEMP 'Upit release smoke') -AutomatedOnly -RequireSignature:$metadata.signed -EvidencePath release-hosted-evidence.json
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: upit-windows-x64-signed-${{ github.run_id }}
+          name: upit-windows-x64-release-${{ github.run_id }}
           path: dist/windows/
+      - name: Upload release trust evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upit-windows-release-hosted-evidence
+          path: release-hosted-evidence.json
 
   native-smoke:
-    name: Protected Windows 11 x64 Explorer smoke
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: signed-build
+    name: Unsigned Windows 11 x64 Explorer functional gate
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    needs: verify
     runs-on: [self-hosted, Windows, X64, upit-native-smoke]
     environment: upit-windows-native-smoke
-    permissions:
-      contents: read
     steps:
-      - name: Checkout protected tag
-        uses: actions/checkout@v4
-      - name: Download signed consumer installer
+      - uses: actions/checkout@v4
+      - name: Download unsigned functional artifact
         uses: actions/download-artifact@v4
         with:
-          name: upit-windows-x64-signed-${{ github.run_id }}
+          name: upit-windows-x64-unsigned
           path: dist/windows/
-      - name: Run interactive Windows 11 Explorer smoke
+      - name: Observe actual Explorer and Desktop lifecycle
         shell: pwsh
-        run: .\packaging\windows\native-smoke.ps1 -InstallerPath (Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1).FullName -InstallDirectory (Join-Path $env:RUNNER_TEMP 'Upit')
-      - name: Upload protected native smoke evidence
+        env:
+          UPIT_LEGACY_INSTALLER_PATH: ${{ vars.UPIT_LEGACY_INSTALLER_PATH }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:UPIT_LEGACY_INSTALLER_PATH)) { throw 'Configure a real old packaged installer for the migration gate.' }
+          .\packaging\windows\native-smoke.ps1 -InstallerPath dist/windows/upit-windows-x64-0.0.0-setup.exe -InstallDirectory (Join-Path $env:RUNNER_TEMP 'Upit native smoke') -LegacyInstallerPath $env:UPIT_LEGACY_INSTALLER_PATH -EvidencePath native-smoke-evidence.json
+          $evidence = Get-Content native-smoke-evidence.json -Raw | ConvertFrom-Json
+          if (-not $evidence.success -or -not $evidence.fullAcceptance) { throw 'Native surface and real migration acceptance are incomplete.' }
+      - name: Upload native surface evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: upit-windows-x64-native-smoke-${{ github.run_id }}
+          name: upit-windows-native-smoke-${{ github.run_id }}
           path: native-smoke-evidence.json
 
   publish:
-    name: Publish signed package
+    name: Publish one Windows product
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: native-smoke
+    needs: [release-build, native-smoke]
     runs-on: windows-latest
     permissions:
       contents: write
     steps:
-      - name: Download signed package
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: upit-windows-x64-signed-${{ github.run_id }}
+          name: upit-windows-x64-release-${{ github.run_id }}
           path: dist/windows/
-      - name: Verify and publish the one-product installer
+      - name: Publish setup and sidecars
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
         run: |
           $installer = Get-ChildItem dist/windows -Filter '*-setup.exe' | Select-Object -First 1
-          if ($null -eq $installer) { throw 'Consumer installer is missing from the signed artifact.' }
-          $checksum = Get-Item "$($installer.FullName).sha256" -ErrorAction Stop
-          $metadata = Get-Item "$($installer.FullName).metadata.json" -ErrorAction Stop
-          $expected = ((Get-Content $checksum.FullName -Raw) -split '\s+')[0]
-          $actual = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
-          if ($expected -ne $actual) { throw 'Installer checksum does not match.' }
+          if ($null -eq $installer) { throw 'Release installer is missing.' }
+          $checksum = Get-Item "$($installer.FullName).sha256"
+          $metadata = Get-Item "$($installer.FullName).metadata.json"
           gh release create $env:GITHUB_REF_NAME $installer.FullName $checksum.FullName $metadata.FullName --verify-tag --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

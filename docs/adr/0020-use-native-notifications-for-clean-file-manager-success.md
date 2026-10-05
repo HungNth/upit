@@ -1,3 +1,5 @@
 # Use native notifications for clean File Manager Upload success
 
+Status: accepted for macOS; the Windows decision is superseded by ADR 0021.
+
 A clean File Manager Upload success—upload completed without warnings and the Final URL was copied—closes active progress feedback and emits one distinct silent native notification per invocation through `UNUserNotificationCenter` on macOS and Windows Toast on Windows 11. The notification title is `Upload complete`, its body is `Final URL copied to clipboard.`, selecting it performs no Upit action, and the operating system controls display duration, history, and grouping; when notification delivery is unavailable, the helper exits silently because the result is already in the clipboard, while rejection, cancellation, warnings, failures, and recovery actions retain interactive feedback and native alert fallbacks.

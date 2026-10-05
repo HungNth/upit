@@ -1510,11 +1510,11 @@ https://files.example.com/file.zip
 - Run one desktop instance, never use a system tray or resident worker, and exit completely after resolving active uploads and unsaved edits when the window closes.
 - Prove the desktop contract, including its system light/dark behavior, on Windows, macOS, and modern GTK4/WebKitGTK Linux. v0.5 includes no installer, signing, notarization, or File Manager Upload.
 
-### v0.6 — Windows File Manager Upload (implemented; protected smoke pending)
+### v0.6 — Windows File Manager Upload (historical v0.6 record; superseded by ADR 0021)
 
-- Deliver a signed Windows 11 x64 desktop package with `Upload with Upit` in the primary File Explorer context menu through `IExplorerCommand` and package identity.
+- Historical design delivered a signed Windows 11 x64 desktop package with `Upload with Upit` in the primary File Explorer context menu through `IExplorerCommand`, sparse MSIX package identity, and Toast notifications.
 - File Manager Upload accepts exactly one regular file, applies Global Configuration defaults without opening Upit Desktop, reports privacy-minimized native progress and outcomes, and exits after use.
-
+- *Current Windows contract (superseded by ADR 0021)*: Replaced the primary-menu MSIX/COM route with a per-user Classic Verb under `HKCU\Software\Classes\*\shell\Upit.Upload`, shown under **Show more options**. Unsigned installation is fully functional; Authenticode signing is optional. Clean success exits silently with the Final URL copied to clipboard (no Toast notification). Desktop passively inspects and explicitly repairs the Classic Verb without elevation.
 ### v0.7 — macOS File Manager Upload (implementation complete; protected smoke pending)
 
 - Deliver a Developer ID-signed and notarized macOS 14+ Apple Silicon desktop package with an `Upload with Upit` `NSServices` background helper surfaced via Finder Services and Quick Actions.
