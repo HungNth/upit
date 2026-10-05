@@ -179,6 +179,9 @@ func (a windowsIntegrationAdapter) act(ctx context.Context, action string) error
 		if remains {
 			return errors.New("obsolete Upit package remains registered")
 		}
+		if err := removeStartMenuShortcut(); err != nil {
+			return err
+		}
 		return nil
 	}
 	if action != "repair" {
@@ -201,7 +204,7 @@ func (a windowsIntegrationAdapter) act(ctx context.Context, action string) error
 	if remains {
 		return errors.New("obsolete Upit package cleanup failed")
 	}
-	return nil
+	return ensureStartMenuShortcut(filepath.Join(root, "upit-desktop.exe"))
 }
 
 func (a windowsIntegrationAdapter) writeVerb(root string) error {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -124,6 +125,9 @@ func (a windowsIntegrationAdapter) install(ctx context.Context) error {
 		return cause
 	}
 	if err = a.writeVerb(root); err != nil {
+		return compensate(err)
+	}
+	if err = ensureStartMenuShortcut(filepath.Join(root, "upit-desktop.exe")); err != nil {
 		return compensate(err)
 	}
 	if err = metadata.SetStringValue("PayloadPath", root); err != nil {

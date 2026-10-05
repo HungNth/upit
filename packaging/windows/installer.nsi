@@ -2,6 +2,34 @@ Unicode true
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "Win\COM.nsh"
+!include "Win\Propkey.nsh"
+
+!macro SetLnkAppUserModelId shortcut appid
+  !insertmacro ComHlpr_CreateInProcInstance ${CLSID_ShellLink} ${IID_IShellLink} r0 ""
+  ${If} $0 P<> 0
+    ${IUnknown::QueryInterface} $0 '("${IID_IPersistFile}",.r1)'
+    ${If} $1 P<> 0
+      ${IPersistFile::Load} $1 '("${shortcut}", ${STGM_READWRITE})'
+      ${IUnknown::QueryInterface} $0 '("${IID_IPropertyStore}",.r2)'
+      ${If} $2 P<> 0
+        System::Call 'Oleaut32::SysAllocString(w "${appid}") i.r3'
+        System::Call '*${SYSSTRUCT_PROPERTYKEY}(${PKEY_AppUserModel_ID})p.r4'
+        System::Call '*${SYSSTRUCT_PROPVARIANT}(${VT_BSTR},,&i4 $3)p.r5'
+        ${IPropertyStore::SetValue} $2 '($4,$5)'
+
+        System::Call 'Oleaut32::SysFreeString($3)'
+        System::Free $4
+        System::Free $5
+        ${IPropertyStore::Commit} $2 ""
+        ${IUnknown::Release} $2 ""
+        ${IPersistFile::Save} $1 '("${shortcut}",1)'
+      ${EndIf}
+      ${IUnknown::Release} $1 ""
+    ${EndIf}
+    ${IUnknown::Release} $0 ""
+  ${EndIf}
+!macroend
 
 !ifndef UPIT_VERSION
 !error "UPIT_VERSION is required"
@@ -96,6 +124,7 @@ Section "Upit"
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit" "NoModify" 1
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit" "NoRepair" 1
  CreateShortcut "$SMPROGRAMS\Upit.lnk" "$PayloadPath\upit-desktop.exe"
+ !insertmacro SetLnkAppUserModelId "$SMPROGRAMS\Upit.lnk" "HungNth.Upit"
  ${If} ${Errors}
   MessageBox MB_ICONSTOP "Upit registration succeeded, but installer metadata or shortcut creation failed. Retained payloads at $PayloadPath and previous installation." /SD IDOK
   SetErrorLevel 1

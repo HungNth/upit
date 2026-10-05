@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"runtime"
 
 	"github.com/HungNth/upit/internal/app"
 )
@@ -29,16 +28,14 @@ func completeFeedback(feedback nativeFeedback, result app.FileManagerUploadResul
 		return feedback.Complete(result)
 	}
 	feedback.Close()
-	if runtime.GOOS != "windows" {
-		if notifier, ok := feedback.(interface {
-			Notify(terminalNotification) error
-		}); ok {
-			_ = notifier.Notify(terminalNotification{
-				ID:    rand.Text()[:16],
-				Title: "Upload complete",
-				Body:  "Final URL copied to clipboard.",
-			})
-		}
+	if notifier, ok := feedback.(interface {
+		Notify(terminalNotification) error
+	}); ok {
+		_ = notifier.Notify(terminalNotification{
+			ID:    rand.Text()[:16],
+			Title: "Upload complete",
+			Body:  "Final URL copied to clipboard.",
+		})
 	}
 	return "", false
 }

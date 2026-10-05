@@ -235,6 +235,17 @@ try {
     $automated.payloadIntact = $true
     $automated.obsoletePayloadAbsent = $true
     $automated.legacyPackageAbsent = $true
+    $startMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Upit.lnk'
+    if (-not (Test-Path -LiteralPath $startMenuShortcut)) {
+        throw 'Start Menu shortcut Upit.lnk missing after installation.'
+    }
+    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+    $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('HungNth.Upit')
+    if ($null -eq $notifier -or $notifier.Setting -ne [Windows.UI.Notifications.NotificationSetting]::Enabled) {
+        throw "WinRT ToastNotifier setting is not Enabled for HungNth.Upit: $($notifier.Setting)"
+    }
+    $automated.startMenuShortcutPresent = $true
+    $automated.winrtNotifierEnabled = $true
 
     # 3. Local endpoint configuration and execution
     $port = Get-Random -Minimum 18000 -Maximum 28000
@@ -359,7 +370,7 @@ try {
         Write-Host '     Verify "Upload with Upit" appears with Upit icon for exactly one regular file.'
         Write-Host '  2. Verify folders and multi-selection do not expose or invoke Upload with Upit.'
         Write-Host '  3. Invoke Upload with Upit: verify direct helper launch without opening Upit Desktop.'
-        Write-Host '  4. Confirm clean success closes progress Task Dialog, copies Final URL, exits silently with NO Toast and NO modal dialog.'
+        Write-Host '  4. Confirm clean success closes progress Task Dialog, copies Final URL, and emits silent native Toast "Upload complete".'
         Write-Host '  5. Damage registration (e.g. rename command subkey), verify Desktop reports Needs Repair, click Repair, confirm Registered.'
         Write-Host '  6. Verify manual upload in Desktop and CLI upload operate normally against the same Configuration Set.'
 
@@ -367,8 +378,8 @@ try {
             classicShowMoreOptionsOneFile = 'Upload with Upit appears under Show more options (or Shift+F10) for exactly one regular file'
             foldersAndMultiSelectionHidden = 'Upload with Upit is absent for folders, folder backgrounds, and multi-file selection'
             registeredCommandInvocation = 'invoking Upload with Upit executes the registered command directly without opening Desktop'
-            silentCleanSuccess = 'clean upload closes progress Task Dialog, copies Final URL to clipboard, exits silently with NO Toast and NO modal dialog'
-            noModalDialogOnCleanSuccess = 'clean success leaves NO modal Task Dialog, Message Box, Toast, or persistent window'
+            toastCleanSuccess = 'clean upload closes progress Task Dialog, copies Final URL to clipboard, and displays silent native Toast with title "Upload complete" and body "Final URL copied to clipboard."'
+            noModalDialogOnCleanSuccess = 'clean success leaves NO modal Task Dialog or Message Box'
             warningRemainsInteractive = 'Shortener or clipboard warning remains interactive and visible (not silent)'
             failureRemainsInteractive = 'network or endpoint failure remains interactive with Retry option'
             cancellationRemainsInteractive = 'cancelling progress Task Dialog stops upload without retry and remains interactive'

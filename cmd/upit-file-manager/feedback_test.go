@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"runtime"
 	"testing"
 
 	"github.com/HungNth/upit/internal/app"
@@ -38,15 +37,6 @@ func TestCleanSuccessClosesProgressAndFinishesWithoutInteraction(t *testing.T) {
 	kind, selected := completeFeedback(surface, result)
 	if surface.progressOpen || surface.progressAtNotification || surface.interactive || selected || kind != "" {
 		t.Fatalf("clean success left progress/interaction: %+v; action %q, %t", surface, kind, selected)
-	}
-	if runtime.GOOS == "windows" {
-		if len(surface.notifications) != 0 {
-			t.Fatal("Windows clean success attempted notification delivery")
-		}
-		if resultExitCode(result) != 0 {
-			t.Fatal("silent success changed exit status")
-		}
-		return
 	}
 	if len(surface.notifications) != 1 {
 		t.Fatalf("terminal events = %d, want exactly one", len(surface.notifications))
@@ -98,12 +88,6 @@ func TestSequentialCleanSuccessesDoNotReplaceEarlierEvents(t *testing.T) {
 	result := app.FileManagerUploadResult{Status: app.FileManagerUploadSucceeded}
 	completeFeedback(surface, result)
 	completeFeedback(surface, result)
-	if runtime.GOOS == "windows" {
-		if len(surface.notifications) != 0 {
-			t.Fatal("Windows sequential successes emitted notifications")
-		}
-		return
-	}
 	if len(surface.notifications) != 2 || surface.notifications[0].ID == surface.notifications[1].ID {
 		t.Fatalf("sequential successes did not create distinct terminal events: %+v", surface.notifications)
 	}

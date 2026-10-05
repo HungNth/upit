@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"time"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -290,6 +292,13 @@ func (f *windowsFeedback) Complete(result app.FileManagerUploadResult) (app.File
 	button := <-f.buttons
 	return actionKindForButton(button)
 }
+func (f *windowsFeedback) Notify(notification terminalNotification) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", windowsToastScript)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return runWindowsToast(cmd, notification)
+}
 
 func (f *windowsFeedback) Alert(message string) {
 	showNativeMessage(message, messageBoxOK|messageBoxInformation)
@@ -436,3 +445,27 @@ func mustUTF16(value string) []uint16 {
 	}
 	return result
 }
+
+const windowsToastScript = `
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+
+$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('HungNth.Upit')
+if ($null -eq $notifier -or $notifier.Setting -ne [Windows.UI.Notifications.NotificationSetting]::Enabled) {
+    exit 2
+}
+
+$xmlText = $env:UPIT_TOAST_XML
+
+$doc = [Windows.Data.Xml.Dom.XmlDocument]::new()
+$doc.LoadXml($xmlText)
+
+$toast = [Windows.UI.Notifications.ToastNotification]::new($doc)
+$toast.Tag = $env:UPIT_TOAST_TAG
+
+$notifier.Show($toast)
+exit 0
+`
