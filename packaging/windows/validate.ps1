@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory = $true)] [string] $InstallerPath,
     [Parameter(Mandatory = $true)] [string] $Version,
+    [string] $DesktopPath,
     [switch] $Signed,
     [string] $SourceRoot
 )
@@ -86,8 +87,29 @@ if ($Signed) {
         throw "Installer executable signature status is '$($sig.Status)', expected 'Valid'."
     }
 }
+# 4. Validate PE icon resources on installer executable (fail-closed, zero-dependency)
+if (-not ([System.Management.Automation.PSTypeName]'PeIconValidator').Type) {
+    Add-Type -Path (Join-Path $PSScriptRoot 'PeIconValidator.cs')
+}
+if (-not [PeIconValidator]::HasGroupIcon($InstallerPath)) {
+    throw "Installer executable lacks required embedded RT_GROUP_ICON resource: $InstallerPath"
+}
+if ([string]::IsNullOrWhiteSpace($DesktopPath)) {
+    $desktopCandidate = Join-Path $SourceRoot 'bin\upit-desktop.exe'
+    if (Test-Path -LiteralPath $desktopCandidate -PathType Leaf) {
+        $DesktopPath = $desktopCandidate
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($DesktopPath)) {
+    if (-not (Test-Path -LiteralPath $DesktopPath -PathType Leaf)) {
+        throw "Desktop executable not found for icon validation: $DesktopPath"
+    }
+    if (-not [PeIconValidator]::HasGroupIcon($DesktopPath)) {
+        throw "Desktop binary lacks required embedded RT_GROUP_ICON resource: $DesktopPath"
+    }
+}
 
-# 4. Check for private bin leaks in repository root
+# 5. Check for private bin leaks in repository root
 $binDir = Join-Path $SourceRoot 'bin'
 if (Test-Path -LiteralPath $binDir) {
     $binFiles = Get-ChildItem -LiteralPath $binDir -File -ErrorAction SilentlyContinue
@@ -98,11 +120,13 @@ if (Test-Path -LiteralPath $binDir) {
     }
 }
 
-# 5. Check that package staging in .build/package has not leaked temporary files
+# 6. Check that package staging in .build/package has not leaked temporary files
 $stagingDir = Join-Path $SourceRoot '.build\package'
 if (Test-Path -LiteralPath $stagingDir) {
-    $stagedItems = Get-ChildItem -LiteralPath $stagingDir -ErrorAction SilentlyContinue
-    if ($null -ne $stagedItems -and $stagedItems.Count -gt 0) {
+    $stagedItems = @(Get-ChildItem -LiteralPath $stagingDir -ErrorAction SilentlyContinue)
+    if ($DesktopPath -and $DesktopPath.StartsWith($stagingDir, [StringComparison]::OrdinalIgnoreCase)) {
+        # Validation occurred before cleanup of active runDir
+    } elseif ($stagedItems.Count -gt 0) {
         throw ".build/package must be empty after packaging; found $($stagedItems.Count) item(s)."
     }
 }

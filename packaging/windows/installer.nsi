@@ -43,6 +43,8 @@ Unicode true
 !ifndef UPIT_OUTPUT
 !error "UPIT_OUTPUT is required"
 !endif
+!define MUI_ICON "..\..\assets\branding\app.ico"
+!define MUI_UNICON "..\..\assets\branding\app.ico"
 
 Name "Upit"
 OutFile "${UPIT_OUTPUT}"

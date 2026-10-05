@@ -135,6 +135,7 @@ cp "$FILE_MANAGER_BINARY" "$file_manager_app/Contents/MacOS/upit-file-manager"
 render_plist "$SOURCE_ROOT/packaging/macos/desktop-Info.plist.in" "$app/Contents/Info.plist"
 render_plist "$SOURCE_ROOT/native/macos/finder-service/Info.plist.in" "$service_app/Contents/Info.plist"
 render_plist "$SOURCE_ROOT/packaging/macos/file-manager-Info.plist.in" "$file_manager_app/Contents/Info.plist"
+cp "$SOURCE_ROOT/assets/branding/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
 cp "$ADAPTER_BINARY" "$service_app/Contents/MacOS/UpitFinderService"
 

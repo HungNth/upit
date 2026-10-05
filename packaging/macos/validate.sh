@@ -39,8 +39,9 @@ service_binary="$service_app/Contents/MacOS/UpitFinderService"
 desktop_binary="$APP_PATH/Contents/MacOS/upit-desktop"
 file_manager_binary="$file_manager_app/Contents/MacOS/upit-file-manager"
 cli_binary="$APP_PATH/Contents/Helpers/upit"
+icon_resource="$APP_PATH/Contents/Resources/AppIcon.icns"
 
-for input in "$root_info" "$service_info" "$file_manager_info" "$service_binary" "$desktop_binary" "$file_manager_binary" "$cli_binary"; do
+for input in "$root_info" "$service_info" "$file_manager_info" "$service_binary" "$desktop_binary" "$file_manager_binary" "$cli_binary" "$icon_resource"; do
     if [[ ! -e "$input" ]]; then
         echo "Required package member is missing: $input" >&2
         exit 1
@@ -66,6 +67,15 @@ for plist in "$root_info" "$service_info" "$file_manager_info"; do
         exit 1
     fi
 done
+
+if [[ "$(plutil -extract CFBundleIconFile raw -o - "$root_info")" != "AppIcon" ]]; then
+    echo "Desktop bundle must declare CFBundleIconFile as AppIcon." >&2
+    exit 1
+fi
+if [[ ! -s "$icon_resource" ]]; then
+    echo "Desktop bundle AppIcon.icns must exist and be non-empty." >&2
+    exit 1
+fi
 
 service_name="$(plutil -extract 'NSServices.0.NSMenuItem.default' raw -o - "$service_info")"
 if [[ "$service_name" != "Upload with Upit" ]]; then

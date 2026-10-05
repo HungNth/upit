@@ -89,16 +89,16 @@ try {
     $packageOutput = & (Join-Path $PSScriptRoot 'package.ps1') @packageArgs
     $installerPath = if ($packageOutput -is [array]) { $packageOutput[-1] } else { $packageOutput }
 
-    if (Test-Path -LiteralPath $runDir) {
-        Remove-Item -LiteralPath $runDir -Recurse -Force
-    }
-
     & (Join-Path $PSScriptRoot 'validate.ps1') `
         -InstallerPath $installerPath `
         -Version $Version `
+        -DesktopPath $stagedDesktop `
         -Signed:([bool]$CertificatePath) `
         -SourceRoot $SourceRoot
 
+    if (Test-Path -LiteralPath $runDir) {
+        Remove-Item -LiteralPath $runDir -Recurse -Force
+    }
     Write-Output $installerPath
 } finally {
     if (Test-Path -LiteralPath $runDir) {

@@ -1191,7 +1191,7 @@ onUnmounted(() => {
   <div class="app-shell">
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand-block">
-        <div class="brand-mark" aria-hidden="true">U</div>
+        <img src="/logo.svg" alt="Upit logo" class="brand-logo" width="24" height="24" />
         <div>
           <p class="eyebrow">Upit</p>
           <h1>Desktop</h1>

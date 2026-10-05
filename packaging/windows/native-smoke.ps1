@@ -15,6 +15,10 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
 
+if (-not ([System.Management.Automation.PSTypeName]'PeIconValidator').Type) {
+    Add-Type -Path (Join-Path $PSScriptRoot 'PeIconValidator.cs')
+}
+
 $os = Get-CimInstance Win32_OperatingSystem
 if ([int]$os.BuildNumber -lt 22000) { throw "Windows 11 build required; received $($os.BuildNumber)." }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw "Windows x64 runner required; received $env:PROCESSOR_ARCHITECTURE." }
@@ -238,6 +242,17 @@ try {
     $startMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Upit.lnk'
     if (-not (Test-Path -LiteralPath $startMenuShortcut)) {
         throw 'Start Menu shortcut Upit.lnk missing after installation.'
+    }
+    $uninstallerPath = Join-Path $InstallDirectory 'Uninstall.exe'
+    if (-not (Test-Path -LiteralPath $uninstallerPath)) {
+        throw 'Uninstaller Uninstall.exe missing after installation.'
+    }
+    $desktopInstalled = Join-Path $payloadRoot1 'upit-desktop.exe'
+    if (-not [PeIconValidator]::HasGroupIcon($desktopInstalled)) {
+        throw "Installed desktop executable lacks RT_GROUP_ICON resource: $desktopInstalled"
+    }
+    if (-not [PeIconValidator]::HasGroupIcon($uninstallerPath)) {
+        throw "Installed uninstaller lacks RT_GROUP_ICON resource: $uninstallerPath"
     }
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
     $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('HungNth.Upit')
