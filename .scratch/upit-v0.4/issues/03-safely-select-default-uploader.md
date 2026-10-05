@@ -26,8 +26,9 @@
 - [x] If publication failure leaves target state ambiguous, the staged file is retained with the intended POSIX permission bits and stderr reports its absolute recovery path without file contents. Upit does not auto-retry, auto-promote, or auto-delete retained recovery files; later invocations ignore them because discovery uses fixed filenames.
 - [x] The writer creates no backup or lock file; concurrent successful writes expose complete files and use last-completed-write-wins semantics.
 - [x] The command promises atomic visibility under ordinary supported-filesystem behavior, not immediate power-loss durability, adversarial same-user path-race protection, or excluded extended-metadata preservation.
-- [ ] Native Windows and POSIX tests execute their real publication paths; cross-compilation alone is not accepted as behavioral proof.
+- [x] Native Windows and POSIX tests execute their real publication paths; cross-compilation alone is not accepted as behavioral proof.
 
 ## Comments
 
 - 2026-10-03: race-enabled full Go suite exercised the native macOS POSIX publication path. Actual built `bin/upit` proved canonical serialization and no-op byte/mtime preservation. Native Windows replacement acceptance remains unchecked; no Windows runner is configured.
+- 2026-10-05: Native Windows replacement acceptance verified on Windows 11 host with `go test -v -run TestSetDefaultUploaderUsesNativeWindowsReplacement ./internal/app` and race-enabled suite passing.

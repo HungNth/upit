@@ -1,6 +1,6 @@
 # Upit — Native Clean-Success Notifications for File Manager Upload
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Problem Statement
 

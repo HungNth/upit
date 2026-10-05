@@ -11,7 +11,7 @@
 ## Acceptance criteria
 
 - [x] `make build` compiles only the native CLI for the current host.
-- [ ] The local output is `bin/upit` on macOS/Linux and `bin/upit.exe` on Windows.
+- [x] The local output is `bin/upit` on macOS/Linux and `bin/upit.exe` on Windows.
 - [x] Starting from clean generated output, `bin` contains exactly that CLI after the build; Desktop, File Manager helper, native adapter, and installer artifacts are absent.
 - [x] The generated CLI runs successfully with `--help`.
 - [x] The build contract defines a package-owned temporary staging boundary outside `bin` for later platform package slices.

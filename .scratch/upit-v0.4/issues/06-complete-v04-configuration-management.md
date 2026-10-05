@@ -27,3 +27,4 @@
 ## Comments
 
 - 2026-10-03: `make build build-desktop`, `go test -race ./...`, and `go vet ./...` passed on macOS arm64. Actual `bin/upit` smoke used an isolated temporary HOME and real local HTTP server, covering every read/mutation command, exact outputs, canonical bytes, no-op byte/mtime preservation, selected-default plain/JSON uploads, exact request payloads, child-process exit, and v1 rejection. Native Windows/Linux command/publication proof remains outstanding; cross-builds were not used as a substitute.
+- 2026-10-05: Native Windows replacement primitive verified (`go test -race ./...` and `TestSetDefaultUploaderUsesNativeWindowsReplacement`). Multi-platform Linux verification remains pending.

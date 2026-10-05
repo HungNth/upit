@@ -41,36 +41,46 @@ const (
 	messageBoxError                     = 0x10
 )
 
-type taskDialogButton struct {
-	id   int32
-	text uintptr
+type taskDialogConfigPacked struct {
+	data [160]byte
 }
 
-type taskDialogConfig struct {
-	cbSize               uint32
-	hwndParent           uintptr
-	hInstance            uintptr
-	dwFlags              uint32
-	dwCommonButtons      uint32
-	windowTitle          uintptr
-	mainIcon             uintptr
-	mainInstruction      uintptr
-	content              uintptr
-	buttonCount          uint32
-	buttons              uintptr
-	defaultButton        int32
-	radioButtonCount     uint32
-	radioButtons         uintptr
-	defaultRadioButton   int32
-	verificationText     uintptr
-	expandedInformation  uintptr
-	expandedControlText  uintptr
-	collapsedControlText uintptr
-	footerIcon           uintptr
-	footer               uintptr
-	callback             uintptr
-	callbackData         uintptr
-	width                uint32
+func (c *taskDialogConfigPacked) ptr() uintptr {
+	return uintptr(unsafe.Pointer(&c.data[0]))
+}
+
+func (c *taskDialogConfigPacked) setCbSize(v uint32) {
+	*(*uint32)(unsafe.Pointer(&c.data[0])) = v
+}
+
+func (c *taskDialogConfigPacked) setDwFlags(v uint32) {
+	*(*uint32)(unsafe.Pointer(&c.data[20])) = v
+}
+
+func (c *taskDialogConfigPacked) setDwCommonButtons(v uint32) {
+	*(*uint32)(unsafe.Pointer(&c.data[24])) = v
+}
+
+func (c *taskDialogConfigPacked) setWindowTitle(p uintptr) {
+	*(*uintptr)(unsafe.Pointer(&c.data[28])) = p
+}
+
+func (c *taskDialogConfigPacked) setMainInstruction(p uintptr) {
+	*(*uintptr)(unsafe.Pointer(&c.data[44])) = p
+}
+
+func (c *taskDialogConfigPacked) setContent(p uintptr) {
+	*(*uintptr)(unsafe.Pointer(&c.data[52])) = p
+}
+
+func (c *taskDialogConfigPacked) setButtons(count uint32, buttonsPtr uintptr) {
+	*(*uint32)(unsafe.Pointer(&c.data[60])) = count
+	*(*uintptr)(unsafe.Pointer(&c.data[64])) = buttonsPtr
+}
+
+func (c *taskDialogConfigPacked) setCallback(cb uintptr, data uintptr) {
+	*(*uintptr)(unsafe.Pointer(&c.data[140])) = cb
+	*(*uintptr)(unsafe.Pointer(&c.data[148])) = data
 }
 
 type windowsFeedback struct {
@@ -84,12 +94,106 @@ type windowsFeedback struct {
 	buttons   chan int32
 }
 
+type actCtxW struct {
+	cbSize                  uint32
+	dwFlags                 uint32
+	lpSource                *uint16
+	wProcessorArchitecture uint16
+	wLangId                 uint16
+	lpAssemblyDirectory     *uint16
+	lpResourceName          *uint16
+	lpApplicationName       *uint16
+	hModule                 uintptr
+}
+
 var (
-	taskDialogProc  = windows.NewLazySystemDLL("comctl32.dll").NewProc("TaskDialogIndirect")
 	sendMessageProc = windows.NewLazySystemDLL("user32.dll").NewProc("SendMessageW")
 	feedbackIDs     sync.Map
 	feedbackID      atomic.Uintptr
+	taskDialogOnce  sync.Once
+	taskDialogAddr  uintptr
+	taskDialogErr   error
 )
+
+func getTaskDialogProc() (uintptr, error) {
+	taskDialogOnce.Do(func() {
+		manifest := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+<dependency>
+    <dependentAssembly>
+        <assemblyIdentity
+            type="win32"
+            name="Microsoft.Windows.Common-Controls"
+            version="6.0.0.0"
+            processorArchitecture="*"
+            publicKeyToken="6595b64144ccf1df"
+            language="*"
+        />
+    </dependentAssembly>
+</dependency>
+</assembly>`
+		tmpFile, err := os.CreateTemp("", "upit-comctl6-*.manifest")
+		if err != nil {
+			taskDialogErr = fmt.Errorf("create manifest: %w", err)
+			return
+		}
+		manifestPath := tmpFile.Name()
+		if _, err := tmpFile.WriteString(manifest); err != nil {
+			_ = tmpFile.Close()
+			_ = os.Remove(manifestPath)
+			taskDialogErr = fmt.Errorf("write manifest: %w", err)
+			return
+		}
+		_ = tmpFile.Close()
+		defer os.Remove(manifestPath)
+
+		source, err := windows.UTF16PtrFromString(manifestPath)
+		if err != nil {
+			taskDialogErr = fmt.Errorf("manifest path utf16: %w", err)
+			return
+		}
+
+		kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+		createActCtx := kernel32.NewProc("CreateActCtxW")
+		activateActCtx := kernel32.NewProc("ActivateActCtx")
+		deactivateActCtx := kernel32.NewProc("DeactivateActCtx")
+		releaseActCtx := kernel32.NewProc("ReleaseActCtx")
+
+		act := actCtxW{
+			cbSize:   uint32(unsafe.Sizeof(actCtxW{})),
+			lpSource: source,
+		}
+
+		hActCtx, _, callErr := createActCtx.Call(uintptr(unsafe.Pointer(&act)))
+		if hActCtx == uintptr(windows.InvalidHandle) {
+			taskDialogErr = fmt.Errorf("CreateActCtxW failed: %v", callErr)
+			return
+		}
+		defer releaseActCtx.Call(hActCtx)
+
+		var cookie uintptr
+		r, _, callErr := activateActCtx.Call(hActCtx, uintptr(unsafe.Pointer(&cookie)))
+		if r == 0 {
+			taskDialogErr = fmt.Errorf("ActivateActCtx failed: %v", callErr)
+			return
+		}
+		defer deactivateActCtx.Call(0, cookie)
+
+		hComctl, err := windows.LoadLibrary("comctl32.dll")
+		if err != nil {
+			taskDialogErr = fmt.Errorf("LoadLibrary comctl32.dll failed: %w", err)
+			return
+		}
+
+		addr, err := windows.GetProcAddress(hComctl, "TaskDialogIndirect")
+		if err != nil {
+			taskDialogErr = fmt.Errorf("GetProcAddress TaskDialogIndirect failed: %w", err)
+			return
+		}
+		taskDialogAddr = addr
+	})
+	return taskDialogAddr, taskDialogErr
+}
 
 func newNativeFeedback() nativeFeedback {
 	if os.Getenv("UPIT_FILE_MANAGER_HEADLESS") == "1" {
@@ -115,29 +219,36 @@ func (f *windowsFeedback) show() {
 	copyText := mustUTF16("Copy Final URL")
 	retryText := mustUTF16("Retry")
 	openDesktopText := mustUTF16("Open Upit Desktop")
-	buttons := [...]taskDialogButton{
-		{id: fileManagerCopyButton, text: uintptr(unsafe.Pointer(&copyText[0]))},
-		{id: fileManagerRetryButton, text: uintptr(unsafe.Pointer(&retryText[0]))},
-		{id: fileManagerOpenDesktopButton, text: uintptr(unsafe.Pointer(&openDesktopText[0]))},
-	}
-	config := taskDialogConfig{
-		cbSize:          uint32(unsafe.Sizeof(taskDialogConfig{})),
-		dwFlags:         taskDialogFlagAllowCancellation | taskDialogFlagShowProgressBar | taskDialogFlagSizeToContent,
-		dwCommonButtons: taskDialogCommonCloseButton | taskDialogCommonCancelButton,
-		windowTitle:     uintptr(unsafe.Pointer(&title[0])),
-		mainInstruction: uintptr(unsafe.Pointer(&instruction[0])),
-		content:         uintptr(unsafe.Pointer(&content[0])),
-		buttonCount:     uint32(len(buttons)),
-		buttons:         uintptr(unsafe.Pointer(&buttons[0])),
-		callback:        windows.NewCallback(taskDialogCallback),
-	}
+	var buttonBuf [36]byte
+	*(*int32)(unsafe.Pointer(&buttonBuf[0])) = fileManagerCopyButton
+	*(*uintptr)(unsafe.Pointer(&buttonBuf[4])) = uintptr(unsafe.Pointer(&copyText[0]))
+	*(*int32)(unsafe.Pointer(&buttonBuf[12])) = fileManagerRetryButton
+	*(*uintptr)(unsafe.Pointer(&buttonBuf[16])) = uintptr(unsafe.Pointer(&retryText[0]))
+	*(*int32)(unsafe.Pointer(&buttonBuf[24])) = fileManagerOpenDesktopButton
+	*(*uintptr)(unsafe.Pointer(&buttonBuf[28])) = uintptr(unsafe.Pointer(&openDesktopText[0]))
+
+	var config taskDialogConfigPacked
+	config.setCbSize(160)
+	config.setDwFlags(taskDialogFlagAllowCancellation | taskDialogFlagShowProgressBar | taskDialogFlagSizeToContent)
+	config.setDwCommonButtons(taskDialogCommonCloseButton | taskDialogCommonCancelButton)
+	config.setWindowTitle(uintptr(unsafe.Pointer(&title[0])))
+	config.setMainInstruction(uintptr(unsafe.Pointer(&instruction[0])))
+	config.setContent(uintptr(unsafe.Pointer(&content[0])))
+	config.setButtons(3, uintptr(unsafe.Pointer(&buttonBuf[0])))
+
 	id := feedbackID.Add(1)
-	config.callbackData = id
+	config.setCallback(windows.NewCallback(taskDialogCallback), id)
 	feedbackIDs.Store(id, f)
 	defer feedbackIDs.Delete(id)
 	var selected int32
-	hResult, _, _ := taskDialogProc.Call(
-		uintptr(unsafe.Pointer(&config)),
+	proc, err := getTaskDialogProc()
+	if err != nil {
+		f.signalReady(fmt.Errorf("TaskDialogIndirect unavailable: %w", err))
+		return
+	}
+	hResult, _, _ := syscall.SyscallN(
+		proc,
+		config.ptr(),
 		uintptr(unsafe.Pointer(&selected)),
 		0,
 		0,
