@@ -21,7 +21,7 @@
 - [x] Sequential clean successes use distinct Toast event identities and are not replaced or aggregated by Upit; Windows remains free to group them.
 - [x] Toast unavailable/disabled and Toast API delivery failure are independently controllable test cases.
 - [x] In both unavailable-delivery cases, clean success remains successful, active progress closes, no Task Dialog or Message Box fallback appears, and the one-shot helper exits without waiting for acknowledgment.
-- [ ] Rejection, cancellation, success with warning, failure, `Copy Final URL`, `Retry`, and `Open Upit` retain their existing Task Dialog or Message Box interaction where required, including action-token privacy, consumption, and expiry behavior.
+- [x] Rejection, cancellation, success with warning, failure, `Copy Final URL`, `Retry`, and `Open Upit` retain their existing Task Dialog or Message Box interaction where required, including action-token privacy, consumption, and expiry behavior.
 - [x] CLI and Manual Upload behavior, Configuration Set schema, notification preferences, upload history, and background-process behavior remain unchanged.
 - [x] Deterministic shared-policy tests and narrow Windows adapter tests prove the contract without duplicating upload execution tests or asserting source layout/native call ordering.
 
@@ -31,3 +31,4 @@
 - Per explicit implementation-time user instruction, Toast XML has only visual text and silent audio: no `activationType`, `launch`, or actions. Actual selection behavior is an outstanding native acceptance check, not proven by payload inspection.
 - Unit and narrow Windows adapter tests pass in Go: `TestToastPayloadHasOnlySilentVisualContent`, `TestToastProcessErrorsDistinguishUnavailableFromAPIFailure`, `TestToastProcessBoundary`, and `TestWindowsProgressWindowClosesBeforeTerminalNotification`.
 - 2026-10-05: Tested and verified on Windows 11 host. `TestWindowsProgressWindowClosesBeforeTerminalNotification` passes with dynamic Common-Controls v6 Activation Context and 1-byte packed x64 `TASKDIALOGCONFIG` (160 bytes). The entire deterministic test suite in `cmd/upit-file-manager` passes cleanly.
+- 2026-10-05: Verified non-clean outcome policy with `TestNonCleanOutcomesRetainInteractiveFeedback`, `TestResultSummaryDoesNotRenderPrivateValues`, and `TestActionTokenSelectsRequestedOpaqueAction` passing cleanly on Windows host.

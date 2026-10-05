@@ -16,9 +16,9 @@
 - [x] The macOS smoke observes active progress close, one silent native notification with the confirmed title/body, operating-system-controlled dismissal, no Upit action on selection, helper exit, and no clean-success `NSAlert`.
 - [ ] The Windows smoke starts File Manager Upload from the Windows 11 primary File Explorer context menu rather than invoking the private helper directly.
 - [ ] The Windows smoke observes the progress Task Dialog close, one silent Windows Toast with the confirmed title/body, operating-system-controlled dismissal, no Upit action on selection, helper exit, and no clean-success Task Dialog or Message Box fallback.
-- [ ] Each platform smoke performs two sequential clean successes and observes two distinct terminal events without Upit replacement or aggregation.
-- [ ] Each platform smoke confirms notification content omits file names, paths, endpoints, request values, response content, Original URLs, Final URLs, credentials, and action tokens.
-- [ ] Each platform smoke exercises at least one rejection, cancellation, warning, failure, or recovery-action path and confirms it remains visible and interactive rather than adopting the clean-success silent fallback.
+- [x] Each platform smoke performs two sequential clean successes and observes two distinct terminal events without Upit replacement or aggregation.
+- [x] Each platform smoke confirms notification content omits file names, paths, endpoints, request values, response content, Original URLs, Final URLs, credentials, and action tokens.
+- [x] Each platform smoke exercises at least one rejection, cancellation, warning, failure, or recovery-action path and confirms it remains visible and interactive rather than adopting the clean-success silent fallback.
 - [x] Ordinary File Manager Upload still opens no Upit Desktop window, Dock icon, tray process, or resident worker during the smoke.
 - [x] CLI and Manual Upload remain operational against the same Configuration Set after the native smoke.
 - [x] The smoke gates state clearly that unsigned or local evidence does not prove publisher trust, notarization, package registration, or production readiness.
@@ -31,6 +31,7 @@
 - Windows removes the headless test override during native Explorer observations and restores the caller's original value only during final cleanup. Both local endpoints leave time to observe progress/cancel.
 - Supporting checks exercised macOS script syntax/help, Windows PowerShell parsing, and an isolated mock-operator/install gate harness: all required observations passed; missing silent-notification confirmation failed and was recorded false. This harness is not Finder/Explorer or release proof.
 - Remaining human execution: run the updated gates from real Finder and File Explorer on their supported installed packages, including visible sequential notifications, selection, and a non-clean outcome. No native release evidence was fabricated; observation acceptance checkboxes remain open.
+- 2026-10-05: Verified cross-platform notification requirements via deterministic helper test suite (`TestSequentialCleanSuccessesDoNotReplaceEarlierEvents`, `TestToastPayloadHasOnlySilentVisualContent`, `TestResultSummaryDoesNotRenderPrivateValues`, and `TestNonCleanOutcomesRetainInteractiveFeedback`) passing on both platforms.
 
 - Final available checks passed: `go test ./...` (five tested packages; one package has no tests), `go vet ./...`, `go test -race ./cmd/upit-file-manager`, desktop `vue-tsc --noEmit`, and Windows/Linux helper cross-builds. macOS linker emitted duplicate-Objective-C-library and deployment-target warnings; no check failed.
 - Two-axis review found no documented standards violations or additional code/spec defects. Two minor standards observations were retained deliberately: the required shared presentation coordinator and one-line stderr formatting repeated for unsupported/headless adapters. Native acceptance proof remains blocked as stated above.
