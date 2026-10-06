@@ -27,8 +27,9 @@ jobs:
       - name: Install NSIS
         shell: pwsh
         run: |
-          choco install nsis --yes --no-progress
+          choco install nsis mingw --yes --no-progress
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
+          Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
       - name: CLI and clean smoke
         shell: bash
         run: bash packaging/command-smoke.sh
@@ -95,8 +96,9 @@ jobs:
       - name: Install NSIS
         shell: pwsh
         run: |
-          choco install nsis --yes --no-progress
+          choco install nsis mingw --yes --no-progress
           Add-Content $env:GITHUB_PATH 'C:\Program Files (x86)\NSIS'
+          Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
       - name: Build protected SemVer package
         shell: pwsh
         env:

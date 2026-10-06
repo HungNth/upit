@@ -54,8 +54,8 @@ Windows clean success closes progress, leaves the Final URL in the clipboard, an
 32. As a Desktop user, I want guidance to name **Show more options**, so that verification matches the actual Windows 11 surface.
 33. As a Desktop user, I want an action to open File Explorer for manual verification, so that `Registered` is not confused with live menu visibility.
 34. As a Desktop or Manual Upload user, I want File Manager Integration failure isolated from Configuration Set management and Manual Upload, so that an integration fault does not disable working features.
-35. As an installer user, I want one NSIS setup executable containing Desktop, CLI, and the private helper, so that Upit remains one product.
-36. As an installer user, I do not want a separate MSIX, Explorer DLL, or helper application entry, so that private implementation details remain private.
+35. As an installer user, I want one NSIS setup executable containing Desktop, the real CLI, the private helper, and the stable public CLI launcher, so that Upit remains one product.
+36. As an installer user, I do not want a separate MSIX, Explorer DLL, or separate helper application entry, so that private implementation details remain private.
 37. As an installer user, I want installation to stage a complete new payload before changing registration, so that a partial copy cannot become active.
 38. As an installer user, I want update to switch the Classic Verb to the new helper only after the new payload is ready, so that the command never intentionally targets incomplete files.
 39. As an installer user, I want the new registration inspected before the previous payload is removed, so that update success is proven before cleanup.
@@ -98,7 +98,7 @@ Windows clean success closes progress, leaves the Final URL in the clipboard, an
 - `Needs Repair` requires an intact required payload with absent or stale verb registration or a remaining obsolete package route. `Reinstall Upit` requires missing or damaged required payload. Signing status is not part of state classification.
 - Passive inspection never mutates registration. Explicit Repair rewrites the exact current-user verb, removes the obsolete package route when present, notifies Explorer that associations changed, re-inspects, and succeeds only when state becomes `Registered`; a failed legacy cleanup remains visible and is never reported as success.
 - The current installer-only lifecycle commands may remain private implementation entry points, but no user-facing self-registration or portable distribution command is added.
-- The consumer deliverable remains one versioned NSIS installer. Desktop, CLI, and the one-shot helper remain private compatible payload members under one Upit version.
+- The consumer deliverable remains one versioned NSIS installer. Desktop, the real CLI, and the one-shot helper remain version-aligned payload members under one Upit product version, while `%LOCALAPPDATA%\Programs\Upit\upit.exe` serves as the public CLI entry point per ADR 0023.
 - The Explorer COM adapter, C++ build, sparse MSIX, Appx manifest, package identity, retained MSIX repair material, MSIX payload trust checks, and MakeAppx dependency are removed completely.
 - Ordinary package builds are unsigned and fully functional. Existing protected-tag certificate inputs may optionally Authenticode-sign binaries and the installer; signing remains restricted to protected SemVer release context and does not change runtime behavior.
 - Installation and update keep versioned staging and use this transaction: stage the new payload; write the Classic Verb pointing to the new helper; inspect it as `Registered`; switch active product metadata while retaining the previous payload; request removal of the obsolete package registration; inspect whether that package identity is absent; commit only when the Classic Verb is registered and the obsolete package is absent; then remove the previous payload.

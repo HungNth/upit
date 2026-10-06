@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/HungNth/upit/internal/windowspayload"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -33,23 +34,62 @@ func (a windowsIntegrationAdapter) key() string {
 	}
 	return classicVerbKey
 }
+
 func (a windowsIntegrationAdapter) payload() (string, bool, error) {
 	executable, err := a.executable()
 	if err != nil {
 		return "", false, err
 	}
-	return inspectWindowsPayload(filepath.Dir(executable))
+	dir := filepath.Dir(executable)
+	if a.metadataPath != "" {
+		if err := windowspayload.ValidateFixturePayload(dir); err != nil {
+			return dir, false, nil
+		}
+		return dir, true, nil
+	}
+	return a.inspectActivePayload(dir)
 }
 
-func inspectWindowsPayload(root string) (string, bool, error) {
-	for _, name := range []string{"upit.exe", "upit-desktop.exe", "upit-file-manager.exe"} {
-		info, err := os.Stat(filepath.Join(root, name))
-		if err != nil || !info.Mode().IsRegular() {
+func (a windowsIntegrationAdapter) inspectActivePayload(root string) (string, bool, error) {
+	if a.metadataPath != "" {
+		if err := windowspayload.ValidateFixturePayload(root); err != nil {
 			return root, false, nil
 		}
+		return root, true, nil
+	}
+	// Production validation: expected install root is derived from a.executable()
+	// (e.g. <installRoot>\versions\<oldOrNewVersion>\upit-desktop.exe -> parent of parent is installRoot)
+	exePath, err := a.executable()
+	if err != nil {
+		return root, false, err
+	}
+	expectedInstallRoot := resolveInstallRoot(exePath)
+	_, err = windowspayload.ValidateCommittedPayload(root, expectedInstallRoot, "")
+	if err != nil {
+		if strings.HasSuffix(strings.ToLower(filepath.Base(root)), ".tmp") {
+			if _, legErr := windowspayload.ValidateLegacyTmpPayload(root, expectedInstallRoot); legErr == nil {
+				return root, true, nil
+			}
+		}
+		return root, false, nil
 	}
 	return root, true, nil
 }
+func resolveInstallRoot(exePath string) string {
+	cur := filepath.Dir(exePath)
+	for cur != "" {
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		if strings.EqualFold(filepath.Base(cur), "versions") || strings.EqualFold(filepath.Base(cur), "staging") {
+			return parent
+		}
+		cur = parent
+	}
+	return filepath.Dir(filepath.Dir(filepath.Dir(exePath)))
+}
+
 
 func (a windowsIntegrationAdapter) activePayload() (string, bool, error) {
 	path := a.metadataPath
@@ -74,7 +114,7 @@ func (a windowsIntegrationAdapter) activePayload() (string, bool, error) {
 	if kind != registry.SZ || !filepath.IsAbs(root) {
 		return "", false, nil
 	}
-	return inspectWindowsPayload(root)
+	return a.inspectActivePayload(root)
 }
 func (a windowsIntegrationAdapter) legacyPackage(ctx context.Context, remove bool) (bool, error) {
 	if a.legacy != nil {

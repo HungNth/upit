@@ -34,8 +34,8 @@ Local packaging defaults to version `0.0.0` and creates an unsigned verification
 10. As a File Manager Upload user, I want the installer to contain the required private helper, so that Finder or File Explorer integration does not require a second download.
 11. As a File Manager Upload user, I want the installer to contain the native platform adapter, so that File Manager Integration is delivered with the product.
 12. As a Desktop installer user, I want the CLI payload included in the installation, so that package smoke, recovery, and product continuity use the same product version.
-13. As a terminal user, I do not want Desktop installation to modify `PATH`, so that a graphical installation does not silently alter my shell environment.
-14. As a terminal user, I do not want Desktop installation to create a separate CLI shortcut or application entry point, so that private package payloads remain private.
+13. As a Windows terminal user, I want the installer to expose `upit.exe` as a stable command on User PATH, while keeping the real CLI, Desktop, and File Manager helper together under `versions\X.Y.Z`.
+14. As a macOS user, I want the packaged CLI to remain a private helper inside the application bundle, so that Finder Services and Desktop remain self-contained.
 15. As a maintainer, I want Desktop, helper, adapter, and packaged CLI inputs built in temporary staging, so that `bin` remains the standalone CLI output boundary.
 16. As a maintainer, I want package staging removed after successful packaging, so that generated private inputs do not accumulate.
 17. As a maintainer, I want package staging removed after failed packaging, so that retries start from a known state.
@@ -78,7 +78,7 @@ Local packaging defaults to version `0.0.0` and creates an unsigned verification
 - The macOS consumer artifact remains one DMG containing one `Upit.app` with Desktop and its private Finder integration components. The private CLI is installed at `Upit.app/Contents/Helpers/upit`, signed with the nested code, validated as part of the bundle, and used by native smoke instead of a separate CLI from `bin`.
 - The Windows consumer artifact remains one setup executable containing Desktop, the private CLI payload, File Manager helper, Explorer adapter, and private registration/repair material.
 - Private Windows registration material is an installer input, not a separate consumer download.
-- Desktop installation does not place the packaged CLI on `PATH`, create a CLI shortcut, or present it as a separate application.
+- On Windows, desktop installation publishes a stable launcher at `%LOCALAPPDATA%\Programs\Upit\upit.exe` and idempotently adds that root to User PATH, while Desktop and the private helper target the versioned Active Payload directly. On macOS, the packaged CLI remains private within the app bundle and does not modify PATH.
 - The package output retains the existing platform naming convention, checksum sidecar, and structured metadata sidecar.
 - `VERSION` is the single product-version input. It defaults to `0.0.0` for local packaging and accepts a numeric `X.Y.Z` SemVer for CI and releases.
 - macOS uses `X.Y.Z` directly. Windows derives `X.Y.Z.0` only where its package identity or file metadata requires four numeric components; the public product version remains `X.Y.Z`.

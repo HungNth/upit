@@ -4,6 +4,8 @@ param(
     [Parameter(Mandatory = $true)] [string] $DesktopPath,
     [Parameter(Mandatory = $true)] [string] $FileManagerHelperPath,
     [Parameter(Mandatory = $true)] [string] $CliPath,
+    [string] $LauncherPath,
+    [string] $InstallWorkerPath,
     [Parameter(Mandatory = $true)] [string] $Workspace,
     [string] $SourceRoot,
     [string] $OutputDirectory,
@@ -58,6 +60,12 @@ try {
         $FileManagerHelperPath,
         $CliPath
     )
+    if ($LauncherPath) {
+        $required += $LauncherPath
+    }
+    if ($InstallWorkerPath) {
+        $required += $InstallWorkerPath
+    }
     foreach ($file in $required) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
             throw "Required package input is missing: $file"
@@ -67,6 +75,12 @@ try {
     Copy-Item -LiteralPath $DesktopPath -Destination (Join-Path $installerPayload 'upit-desktop.exe') -Force
     Copy-Item -LiteralPath $FileManagerHelperPath -Destination (Join-Path $installerPayload 'upit-file-manager.exe') -Force
     Copy-Item -LiteralPath $CliPath -Destination (Join-Path $installerPayload 'upit.exe') -Force
+    if ($LauncherPath) {
+        Copy-Item -LiteralPath $LauncherPath -Destination (Join-Path $installerPayload 'upit-launcher.exe') -Force
+    }
+    if ($InstallWorkerPath) {
+        Copy-Item -LiteralPath $InstallWorkerPath -Destination (Join-Path $installerPayload 'upit-install.exe') -Force
+    }
 
     $signTool = $null
     $signArgs = $null
@@ -84,6 +98,12 @@ try {
             (Join-Path $installerPayload 'upit-file-manager.exe'),
             (Join-Path $installerPayload 'upit.exe')
         )
+        if ($LauncherPath) {
+            $signTargets += (Join-Path $installerPayload 'upit-launcher.exe')
+        }
+        if ($InstallWorkerPath) {
+            $signTargets += (Join-Path $installerPayload 'upit-install.exe')
+        }
         foreach ($target in $signTargets) {
             & $signTool @signArgs $target
             if ($LASTEXITCODE -ne 0) { throw "signtool failed for $target with exit code $LASTEXITCODE." }

@@ -6,7 +6,12 @@ param(
     [switch] $AutomatedOnly,
     [switch] $RequireSignature,
     [string] $LegacyInstallerPath,
-    [switch] $VerifyLegacyMigration
+    [switch] $VerifyLegacyMigration,
+    [switch] $FreshInstallOnly,
+    [string] $Format0InstallerPath,
+    [string] $LegacyRandomInstallerPath,
+    [string] $PreviousInstallerPath,
+    [string] $CleanupInstallerPath
 )
 
 Set-StrictMode -Version Latest
@@ -100,6 +105,7 @@ $smokeError = $null
 $smokeNotes = ''
 
 $priorHeadless = $env:UPIT_FILE_MANAGER_HEADLESS
+$userPathBefore = [Environment]::GetEnvironmentVariable('Path', 'User')
 $automated = [ordered]@{}
 $operatorObserved = [ordered]@{}
 $operatorChecksExercised = $false
@@ -107,6 +113,79 @@ $legacyPackageObserved = $false
 $legacyMigrationExercised = $false
 $legacyMigrationRemovedOldPackage = $false
 $fullAcceptance = $false
+
+function Get-RegistryState([string] $path) {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($path)
+    if ($null -eq $key) { return $null }
+    try {
+        $values = [ordered]@{}
+        foreach ($name in @($key.GetValueNames() | Sort-Object)) {
+            $values[$name] = @([string]$key.GetValueKind($name), $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames))
+        }
+        $children = [ordered]@{}
+        foreach ($name in @($key.GetSubKeyNames() | Sort-Object)) {
+            $children[$name] = Get-RegistryState ($path + '\' + $name)
+        }
+        return [ordered]@{ values = $values; children = $children }
+    } finally { $key.Close() }
+}
+
+function Get-CallableState([string] $root) {
+    $files = [ordered]@{}
+    foreach ($path in @((Join-Path $root 'Uninstall.exe'), (Join-Path $root 'upit.exe'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'Upit.lnk'))) {
+        $files[$path] = if (Test-Path -LiteralPath $path -PathType Leaf) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash } else { $null }
+    }
+    return ([ordered]@{
+        product = Get-RegistryState 'Software\Upit'
+        verb = Get-RegistryState 'Software\Classes\*\shell\Upit.Upload'
+        uninstall = Get-RegistryState 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Upit'
+        files = $files
+        userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    } | ConvertTo-Json -Depth 20 -Compress)
+}
+
+function Normalize-WindowsPath([string] $path) {
+    return $path.Trim().Replace('/', '\').TrimEnd('\').ToLowerInvariant()
+}
+
+function Invoke-InstalledCLI([string[]] $arguments, [string] $workingDirectory) {
+    $quoted = @($arguments | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ','
+    $script = '[Console]::OutputEncoding = [Text.Encoding]::UTF8; & upit @(' + $quoted + '); exit $LASTEXITCODE'
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo.FileName = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $process.StartInfo.Arguments = '-NoProfile -NonInteractive -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    $process.StartInfo.WorkingDirectory = $workingDirectory
+    $process.StartInfo.EnvironmentVariables['PATH'] = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+    try {
+        $process.Start() | Out-Null
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(30000)) { throw 'Stable CLI invocation timed out.' }
+        return @{ exit = $process.ExitCode; stdout = $stdout.GetAwaiter().GetResult(); stderr = $stderr.GetAwaiter().GetResult() }
+    } finally { $process.Dispose() }
+}
+
+function Invoke-ConsoleHelper([string] $script) {
+    $script = '$ErrorActionPreference="Stop"; $ProgressPreference="SilentlyContinue"; try { ' + $script + '; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.ToString()); exit 1 }'
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo.FileName = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $process.StartInfo.Arguments = '-NoProfile -NonInteractive -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    try {
+        $process.Start() | Out-Null
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(20000)) { throw 'Real console helper timed out.' }
+        return @{ exit = $process.ExitCode; stdout = $stdout.GetAwaiter().GetResult(); stderr = $stderr.GetAwaiter().GetResult() }
+    } finally { $process.Dispose() }
+}
 
 function Assert-ClassicRegistration([string] $targetInstallDir) {
     if (-not (Test-Path -LiteralPath $productKey)) {
@@ -184,6 +263,23 @@ try {
         }
     }
     $backupComplete = $true
+    if (-not $legacyMigrationRequested) {
+        New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
+        $blockedLauncher = Join-Path $InstallDirectory 'upit.exe'
+        [IO.File]::WriteAllBytes($blockedLauncher, [byte[]]@())
+        $freshBefore = Get-CallableState $InstallDirectory
+        $publicationLock = [IO.File]::Open($blockedLauncher, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            $failedFresh = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
+            if (-not $failedFresh.WaitForExit(60000)) { throw 'Failed fresh-publication fixture timed out.' }
+            if ($failedFresh.ExitCode -eq 0) { throw 'Fresh install succeeded despite an unavailable stable launcher path.' }
+            if ((Get-CallableState $InstallDirectory) -cne $freshBefore) { throw 'Failed fresh install left new routes, PATH, metadata, or modified user files.' }
+            $retainedExecutables = @(Get-ChildItem -LiteralPath $InstallDirectory -Recurse -Filter '*.exe' | Where-Object { $_.FullName -ne $blockedLauncher })
+            if ($retainedExecutables.Count -ne 0) { throw 'Successfully compensated fresh install retained an incomplete payload.' }
+            $automated.failedFreshPublicationRestoresState = $true
+        } finally { $publicationLock.Dispose() }
+        Remove-Item -LiteralPath $InstallDirectory -Recurse -Force
+    }
 
     # 2. Migration mode or clean installation
     $payloadRoot1 = $null
@@ -238,6 +334,25 @@ try {
     $automated.registryCommand = $true
     $automated.payloadIntact = $true
     $automated.obsoletePayloadAbsent = $true
+    $expectedPayload = Join-Path (Join-Path $InstallDirectory 'versions') $artifactProductVersion
+    if ($payloadRoot1 -cne $expectedPayload) { throw 'Active Payload is not the requested readable version directory.' }
+    foreach ($name in @('upit.exe', 'upit-desktop.exe', 'upit-file-manager.exe')) {
+        if ((Get-Item -LiteralPath (Join-Path $payloadRoot1 $name)).VersionInfo.ProductVersion -ne $artifactProductVersion) { throw "Incoherent payload product version: $name" }
+    }
+    $stableLauncher = Join-Path $InstallDirectory 'upit.exe'
+    if (-not (Test-Path -LiteralPath $stableLauncher -PathType Leaf)) { throw 'Stable root launcher is missing.' }
+    $automated.readableVersionLayout = $true
+    $userPathAfter = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $rootNormalized = Normalize-WindowsPath $InstallDirectory
+    $priorRootEntries = @($userPathBefore -split ';' | Where-Object { (Normalize-WindowsPath $_) -eq $rootNormalized })
+    $newRootEntries = @($userPathAfter -split ';' | Where-Object { (Normalize-WindowsPath $_) -eq $rootNormalized })
+    if ($newRootEntries.Count -ne [Math]::Max(1, $priorRootEntries.Count)) { throw 'Installer added duplicate equivalent stable-root PATH entries.' }
+    $unrelatedBefore = @($userPathBefore -split ';' | Where-Object { (Normalize-WindowsPath $_) -ne $rootNormalized }) -join ';'
+    $unrelatedAfter = @($userPathAfter -split ';' | Where-Object { (Normalize-WindowsPath $_) -ne $rootNormalized }) -join ';'
+    if ($unrelatedBefore -cne $unrelatedAfter) { throw 'Installation modified unrelated PATH entry text or order.' }
+    $expectedPathOwned = if ($priorRootEntries.Count -eq 0) { 1 } else { 0 }
+    if ((Get-Item -LiteralPath $productKey).GetValue('PathEntryOwned') -ne $expectedPathOwned) { throw 'Installer did not record correct PATH ownership.' }
+    $automated.stablePathOwnership = $true
     $automated.legacyPackageAbsent = $true
     $startMenuShortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Upit.lnk'
     if (-not (Test-Path -LiteralPath $startMenuShortcut)) {
@@ -279,11 +394,15 @@ try {
                 while (-not $pending.IsCompleted) { Start-Sleep -Milliseconds 50 }
                 $context = $pending.GetAwaiter().GetResult()
                 Add-Content -LiteralPath $jobRequestLog -Value 'REQUEST'
-                Start-Sleep -Milliseconds $responseDelay
+                if ($context.Request.RawUrl -eq '/cancel') { Start-Sleep -Seconds 10 }
+                elseif ($context.Request.RawUrl -eq '/hold') { Start-Sleep -Seconds 180 }
+                else { Start-Sleep -Milliseconds $responseDelay }
                 try {
                     $context.Response.StatusCode = 200
                     $bytes = [Text.Encoding]::UTF8.GetBytes('https://files.example.test/native-smoke')
                     $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+                } catch [System.Net.HttpListenerException], [System.IO.IOException] {
+                    if ($context.Request.RawUrl -ne '/cancel') { throw }
                 } finally { $context.Response.Close() }
             }
         } finally { $server.Close() }
@@ -361,19 +480,43 @@ try {
     Remove-Item Env:UPIT_FILE_MANAGER_HEADLESS -ErrorAction SilentlyContinue
 
     # 4. CLI continuity
-    $cli = Start-Process -FilePath (Join-Path $payloadRoot1 'upit.exe') -ArgumentList '--help' -PassThru -Wait -NoNewWindow
-    if ($cli.ExitCode -ne 0) { throw "CLI help exited with code $($cli.ExitCode)." }
+    $helpResult = Invoke-InstalledCLI @('--help') $fixtureDirectory
+    if ($helpResult.exit -ne 0 -or $helpResult.stdout -notmatch 'upit upload' -or $helpResult.stderr.Trim()) { throw 'New terminal cannot invoke stable CLI help by command name.' }
     $automated.cliHelp = $true
-    $cliOutput = Join-Path $fixtureDirectory 'cli-output.txt'
-    $cliError = Join-Path $fixtureDirectory 'cli-error.txt'
-    $cliUpload = Start-Process -FilePath (Join-Path $payloadRoot1 'upit.exe') -ArgumentList ('upload "' + $fixtureFile + '"') -RedirectStandardOutput $cliOutput -RedirectStandardError $cliError -PassThru -Wait
-    if ($cliUpload.ExitCode -ne 0 -or (Get-Content -LiteralPath $cliOutput -Raw).Trim() -ne 'https://files.example.test/native-smoke') {
-        throw 'CLI upload against the same Configuration Set failed.'
-    }
-    if (@(Get-Content -LiteralPath $requestLog | Where-Object { $_ -eq 'REQUEST' }).Count -ne 2) {
-        throw 'CLI upload did not perform exactly one additional request.'
-    }
+    $unicodeFile = Join-Path $fixtureDirectory ('upload ' + [char]0x7A7A + [char]0x95F4 + ' file.txt')
+    Copy-Item -LiteralPath $fixtureFile -Destination $unicodeFile
+    $uploadResult = Invoke-InstalledCLI @('upload', (Split-Path -Leaf $unicodeFile)) $fixtureDirectory
+    if ($uploadResult.exit -ne 0 -or $uploadResult.stdout.Trim() -ne 'https://files.example.test/native-smoke' -or $uploadResult.stderr.Trim()) { throw 'Stable CLI failed relative Unicode-path upload or output-channel preservation.' }
+    if (@(Get-Content -LiteralPath $requestLog | Where-Object { $_ -eq 'REQUEST' }).Count -ne 2) { throw 'Stable CLI did not perform exactly one additional upload.' }
+    $failureResult = Invoke-InstalledCLI @('upload', 'missing smoke file.txt') $fixtureDirectory
+    if ($failureResult.exit -eq 0 -or -not $failureResult.stderr.Trim() -or $failureResult.stdout.Trim()) { throw 'Stable CLI lost nonzero status or error-channel isolation.' }
+    $automated.relativeUnicodeArguments = $true
+    $automated.nonzeroExitAndStderr = $true
     $automated.cliUpload = $true
+    $metadata = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Upit', $true)
+    try {
+        foreach ($invalid in @($fixtureDirectory, (Join-Path $InstallDirectory 'versions\999.999.999'), (Join-Path $InstallDirectory 'staging\invalid'), (Join-Path $InstallDirectory 'recovery\invalid'))) {
+            $metadata.SetValue('PayloadPath', $invalid, [Microsoft.Win32.RegistryValueKind]::String)
+            $rejected = Invoke-InstalledCLI @('--help') $fixtureDirectory
+            if ($rejected.exit -eq 0 -or -not $rejected.stderr.Trim()) { throw 'Launcher selected a payload despite invalid active metadata.' }
+        }
+        $metadata.DeleteValue('PayloadPath')
+        $rejected = Invoke-InstalledCLI @('--help') $fixtureDirectory
+        if ($rejected.exit -eq 0) { throw 'Launcher guessed a version when Active Payload metadata was absent.' }
+    } finally { $metadata.SetValue('PayloadPath', $payloadRoot1, [Microsoft.Win32.RegistryValueKind]::String); $metadata.Close() }
+    $automated.invalidActivePayloadRejected = $true
+    $cancelUploader = $uploaderContent.Replace("${prefix}upload", "${prefix}cancel")
+    [IO.File]::WriteAllText((Join-Path $configDirectory 'custom-uploader.json'), $cancelUploader)
+    try {
+        $cancelHelper = (Join-Path $PSScriptRoot 'ConsoleCancellationSmoke.cs').Replace("'", "''")
+        $cancelCommand = "Add-Type -Path '$cancelHelper'; [ConsoleCancellationSmoke]::CancelUpload('" + $stableLauncher.Replace("'", "''") + "','" + $fixtureFile.Replace("'", "''") + "','" + $fixtureDirectory.Replace("'", "''") + "') | Out-Null"
+        $cancelResult = Invoke-ConsoleHelper $cancelCommand
+        if ($cancelResult.exit -ne 0) { throw ('Console cancellation harness failed: ' + $cancelResult.stderr) }
+        $remainingCLI = @(Get-CimInstance Win32_Process -Filter "Name='upit.exe'" | Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, (Join-Path $payloadRoot1 'upit.exe'), [StringComparison]::OrdinalIgnoreCase) })
+        if ($remainingCLI.Count -ne 0) { throw 'Console cancellation orphaned the real payload CLI.' }
+        if (@(Get-Content -LiteralPath $requestLog | Where-Object { $_ -eq 'REQUEST' }).Count -ne 3) { throw 'Cancellation did not exercise an in-flight real upload.' }
+        $automated.consoleCancellationNoOrphan = $true
+    } finally { [IO.File]::WriteAllText((Join-Path $configDirectory 'custom-uploader.json'), $uploaderContent) }
 
     # 5. Interactive observations (if not -AutomatedOnly)
     if (-not $AutomatedOnly) {
@@ -421,8 +564,71 @@ try {
         $fullAcceptance = $false
     }
 
+    if ($PreviousInstallerPath -or $CleanupInstallerPath) {
+        if (-not $PreviousInstallerPath -or -not $CleanupInstallerPath) { throw 'Different-version smoke requires both previous and cleanup installer artifacts.' }
+        foreach ($artifact in @($PreviousInstallerPath, $CleanupInstallerPath)) {
+            if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) { throw "Update fixture artifact is missing: $artifact" }
+            if ((Get-Item -LiteralPath $artifact).VersionInfo.ProductVersion -eq $artifactProductVersion) { throw 'Update fixture versions must differ from the tested product version.' }
+        }
+        $previousInstall = Start-Process -FilePath $PreviousInstallerPath -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $previousInstall.WaitForExit(60000) -or $previousInstall.ExitCode -ne 0) { throw 'Real prior-version fixture installation failed.' }
+        $oldPayload = Assert-ClassicRegistration $InstallDirectory
+        $launcherBeforeUpdate = (Get-FileHash -LiteralPath $stableLauncher -Algorithm SHA256).Hash
+        if (-not ([System.Management.Automation.PSTypeName]'ConsoleCancellationSmoke').Type) { Add-Type -Path (Join-Path $PSScriptRoot 'ConsoleCancellationSmoke.cs') }
+        [IO.File]::WriteAllText((Join-Path $configDirectory 'custom-uploader.json'), $uploaderContent.Replace("${prefix}upload", "${prefix}hold"))
+        $oldLauncherPID = [ConsoleCancellationSmoke]::StartUpload($stableLauncher, $fixtureFile, $fixtureDirectory)
+        $oldLauncherProcess = [Diagnostics.Process]::GetProcessById($oldLauncherPID)
+        try {
+            $oldPayloadProcess = $null
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+                $oldPayloadProcess = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$oldLauncherPID" | Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, (Join-Path $oldPayload 'upit.exe'), [StringComparison]::OrdinalIgnoreCase) })
+                if ($oldPayloadProcess.Count -eq 1) { break }
+                Start-Sleep -Milliseconds 100
+            }
+            if ($oldPayloadProcess.Count -ne 1) { throw 'Prior-version real CLI did not enter the running payload.' }
+            $oldPayloadPID = $oldPayloadProcess[0].ProcessId
+            $differentUpdate = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
+            if (-not $differentUpdate.WaitForExit(60000) -or $differentUpdate.ExitCode -ne 0) { throw 'Different-version update did not commit while the old launcher and payload were running.' }
+            $payloadRoot1 = Assert-ClassicRegistration $InstallDirectory
+            if ($payloadRoot1 -ne $expectedPayload) { throw 'New invocations were not routed to the tested version.' }
+            if ($oldLauncherProcess.HasExited -or -not (Get-Process -Id $oldPayloadPID -ErrorAction SilentlyContinue)) { throw 'Different-version update terminated the original CLI process.' }
+            if ((Get-FileHash -LiteralPath $stableLauncher -Algorithm SHA256).Hash -ne $launcherBeforeUpdate) { throw 'Ordinary update replaced an adequate running launcher.' }
+            if (-not (Test-Path -LiteralPath $oldPayload) -or @((Get-Item -LiteralPath $productKey).GetValue('InactivePayloads')) -notcontains $oldPayload) { throw 'Locked former payload was not recorded as inactive deferred cleanup.' }
+            $newHelp = Invoke-InstalledCLI @('--help') $fixtureDirectory
+            if ($newHelp.exit -ne 0) { throw 'New stable CLI invocations failed after committed update.' }
+            $automated.committedUpdateWithDeferredCleanup = $true
+            $automated.runningOldPayloadSurvives = $true
+            $automated.adequateRunningLauncherPreserved = $true
+        } finally {
+            if (-not $oldLauncherProcess.HasExited) {
+                $cancelHelper = (Join-Path $PSScriptRoot 'ConsoleCancellationSmoke.cs').Replace("'", "''")
+                $stopScript = "`$ErrorActionPreference='Stop'; Add-Type -Path '$cancelHelper'; [ConsoleCancellationSmoke]::CancelProcess($oldLauncherPID) | Out-Null"
+                $stopResult = Invoke-ConsoleHelper $stopScript
+                if ($stopResult.exit -ne 0) { throw ('Unable to close old CLI fixture through console cancellation: ' + $stopResult.stderr) }
+            }
+            $oldLauncherProcess.Dispose()
+            [IO.File]::WriteAllText((Join-Path $configDirectory 'custom-uploader.json'), $uploaderContent)
+        }
+        $cleanupInstall = Start-Process -FilePath $CleanupInstallerPath -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $cleanupInstall.WaitForExit(60000) -or $cleanupInstall.ExitCode -ne 0) { throw 'Later different-version installation failed.' }
+        $payloadRoot1 = Assert-ClassicRegistration $InstallDirectory
+        $cleanupVersion = (Get-Item -LiteralPath $CleanupInstallerPath).VersionInfo.ProductVersion
+        if ($payloadRoot1 -ne (Join-Path (Join-Path $InstallDirectory 'versions') $cleanupVersion)) { throw 'Cleanup changed the selected Active Payload unexpectedly.' }
+        if (Test-Path -LiteralPath $oldPayload) { throw 'Later install did not remove the unlocked inactive payload.' }
+        if (@((Get-Item -LiteralPath $productKey).GetValue('InactivePayloads')) -contains $oldPayload) { throw 'Removed inactive payload remains recorded for cleanup.' }
+        $automated.laterInstallRetriesDeferredCleanup = $true
+        $automated.cleanCommittedDifferentVersionUpdate = $true
+        # Re-run installerResolved to establish payloadRoot1 at artifactProductVersion before same-version tests
+        $reinstallCurrent = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $reinstallCurrent.WaitForExit(60000) -or $reinstallCurrent.ExitCode -ne 0) { throw 'Resetting to tested version failed.' }
+        $payloadRoot1 = Assert-ClassicRegistration $InstallDirectory
+    }
+
+    $payloadRoot2 = $payloadRoot1
+    if (-not $FreshInstallOnly) {
     # A locked cleanup worker must abort before replacing the callable route.
     $oldCommand = (Get-Item -LiteralPath $classicVerbCommandKey).GetValue('')
+    $stateBeforeFailure = Get-CallableState $InstallDirectory
     $uninstallerLock = [IO.File]::Open((Join-Path $InstallDirectory 'Uninstall.exe'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     try {
         $failedUpdate = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
@@ -432,25 +638,94 @@ try {
         if ($activeAfterFailure -ne $payloadRoot1 -or (Get-Item -LiteralPath $classicVerbCommandKey).GetValue('') -ne $oldCommand) {
             throw 'Failed uninstaller publication replaced the previous active route.'
         }
+        if ((Get-CallableState $InstallDirectory) -cne $stateBeforeFailure) {
+            throw 'Failed publication did not restore exact product, verb, uninstall, shortcut, uninstaller, and User PATH state.'
+        }
         $automated.failedUninstallerPublicationRetainsRoute = $true
     } finally { $uninstallerLock.Dispose() }
 
-    # 6. Same-version update
+    # 6. Same-version update & launcher format replacement
+    # A. Active payload process causes silent same-version install to abort nonzero without state mutation
+    if (-not ([System.Management.Automation.PSTypeName]'ConsoleCancellationSmoke').Type) { Add-Type -Path (Join-Path $PSScriptRoot 'ConsoleCancellationSmoke.cs') }
+    [IO.File]::WriteAllText((Join-Path $configDirectory 'custom-uploader.json'), $uploaderContent.Replace("${prefix}upload", "${prefix}hold"))
+    $activeUploadPID = [ConsoleCancellationSmoke]::StartUpload($stableLauncher, $fixtureFile, $fixtureDirectory)
+    $activeUploadProc = [Diagnostics.Process]::GetProcessById($activeUploadPID)
+        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+            $childProcs = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$activeUploadPID" | Where-Object { $_.ExecutablePath -and [string]::Equals($_.ExecutablePath, (Join-Path $payloadRoot1 'upit.exe'), [StringComparison]::OrdinalIgnoreCase) })
+            if ($childProcs.Count -eq 1) { break }
+            Start-Sleep -Milliseconds 100
+        }
+    try {
+        $sameVerProcBlocked = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $sameVerProcBlocked.WaitForExit(60000)) { throw 'Silent same-version update timed out while process active.' }
+        if ($sameVerProcBlocked.ExitCode -eq 0) { throw 'Silent same-version update succeeded despite active payload process.' }
+        if ($payloadRoot1 -ne (Assert-ClassicRegistration $InstallDirectory)) { throw 'Blocked same-version update altered active payload route.' }
+        $automated.silentSameVersionAbortsWhenInUse = $true
+    } finally {
+        if (-not $activeUploadProc.HasExited) {
+            $cancelHelper = (Join-Path $PSScriptRoot 'ConsoleCancellationSmoke.cs').Replace("'", "''")
+            $stopScript = "`$ErrorActionPreference='Stop'; Add-Type -Path '$cancelHelper'; [ConsoleCancellationSmoke]::CancelProcess($activeUploadPID) | Out-Null"
+            $stopResult = Invoke-ConsoleHelper $stopScript
+        }
+        $activeUploadProc.Dispose()
+        [IO.File]::WriteAllText((Join-Path $configDirectory 'custom-uploader.json'), $uploaderContent)
+    }
+
+    # B. Same-version update after process closes succeeds, retaining the same versions\X.Y.Z path
     $updateProc = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
-    if (-not $updateProc.WaitForExit(60000)) {
-        throw 'Same-version update installer timed out.'
-    }
-    if ($updateProc.ExitCode -ne 0) {
-        throw "Same-version update installer exited with code $($updateProc.ExitCode)."
-    }
+    if (-not $updateProc.WaitForExit(60000) -or $updateProc.ExitCode -ne 0) { throw 'Same-version update failed after process closure.' }
     $payloadRoot2 = Assert-ClassicRegistration $InstallDirectory
-    if ($payloadRoot1 -eq $payloadRoot2) {
-        throw 'Same-version update did not stage a new payload directory.'
+    if ($payloadRoot1 -ne $payloadRoot2) {
+        throw "Same-version update changed payload path from $payloadRoot1 to $payloadRoot2; expected unchanged path per ADR 0023."
     }
-    if (Test-Path -LiteralPath $payloadRoot1) {
-        throw "Same-version update did not remove previous payload directory '$payloadRoot1'."
+    if (@(Get-ChildItem (Join-Path $InstallDirectory 'recovery') -ErrorAction SilentlyContinue).Count -ne 0) {
+        throw 'Same-version update left recovery directory behind.'
     }
     $automated.sameVersionUpdate = $true
+
+    # C. Launcher-format replacement if Format0InstallerPath provided
+    if ($Format0InstallerPath -and (Test-Path -LiteralPath $Format0InstallerPath -PathType Leaf)) {
+        $format0Install = Start-Process -FilePath $Format0InstallerPath -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $format0Install.WaitForExit(60000) -or $format0Install.ExitCode -ne 0) { throw 'Format-0 installer failed to install.' }
+        $format0Val = (& $stableLauncher --launcher-format).Trim()
+        if ($format0Val -ne '0') { throw "Expected format 0 launcher, got '$format0Val'." }
+        $format1Update = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $format1Update.WaitForExit(60000) -or $format1Update.ExitCode -ne 0) { throw 'Format-1 update failed.' }
+        $format1Val = (& $stableLauncher --launcher-format).Trim()
+        if ($format1Val -ne '1') { throw "Expected format 1 launcher after update, got '$format1Val'." }
+        $automated.launcherFormatReplacementVerified = $true
+    }
+    # 7. Real legacy random .tmp layout cutover
+    if ($LegacyRandomInstallerPath -and (Test-Path -LiteralPath $LegacyRandomInstallerPath -PathType Leaf)) {
+        # Clear test directory and install real legacy random .tmp build
+        if (Test-Path -LiteralPath $InstallDirectory) { Remove-Item -LiteralPath $InstallDirectory -Recurse -Force }
+        $legacySetupProc = Start-Process -FilePath $LegacyRandomInstallerPath -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $legacySetupProc.WaitForExit(60000) -or $legacySetupProc.ExitCode -ne 0) { throw 'Legacy random setup install failed.' }
+        $legacyRecordedPayload = (Get-Item -LiteralPath $productKey).GetValue('PayloadPath')
+        if ($legacyRecordedPayload -notmatch '\\versions\\[^\\]+\.tmp$') { throw "Recorded legacy payload does not match expected .tmp layout: $legacyRecordedPayload" }
+        # Simulate user manually adding legacy random payload to User PATH
+        $userPathWithLegacy = [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + $legacyRecordedPayload
+        [Environment]::SetEnvironmentVariable('Path', $userPathWithLegacy, 'User')
+        # Run new stable installer over legacy installation
+        $cutoverProc = Start-Process -FilePath $installerResolved -ArgumentList "/S /D=$InstallDirectory" -PassThru
+        if (-not $cutoverProc.WaitForExit(60000) -or $cutoverProc.ExitCode -ne 0) { throw 'Cutover installer from legacy failed.' }
+        $cutoverPayload = Assert-ClassicRegistration $InstallDirectory
+        if ($cutoverPayload -ne $expectedPayload) { throw "Cutover did not switch to expected version layout: $cutoverPayload" }
+        if (-not (Test-Path -LiteralPath $stableLauncher)) { throw 'Cutover did not publish stable launcher.' }
+        # Verify user-owned legacy PATH entry is preserved untouched and stable root is added
+        $userPathAfterCutover = [Environment]::GetEnvironmentVariable('Path', 'User')
+        if ($userPathAfterCutover -notmatch [regex]::Escape($legacyRecordedPayload)) { throw 'Installer improperly removed or modified user-owned legacy PATH entry.' }
+        if ($userPathAfterCutover -notmatch [regex]::Escape($InstallDirectory)) { throw 'Installer failed to add stable root to User PATH during cutover.' }
+        if ((Get-Item -LiteralPath $productKey).GetValue('PathEntryOwned') -ne 1) { throw 'Installer did not record ownership for newly added stable root.' }
+        # Verify old random payload directory is deleted post-commit
+        if (Test-Path -LiteralPath $legacyRecordedPayload) { throw 'Old random .tmp payload was not deleted after successful cutover.' }
+        $automated.legacyLayoutCutoverVerified = $true
+        $automated.userOwnedLegacyPathPreserved = $true
+        # Clean up test-only user PATH entry so final uninstall assertion tests original userPathBefore
+        $userPathWithoutLegacy = [Environment]::GetEnvironmentVariable('Path', 'User').Replace(';' + $legacyRecordedPayload, '').Replace($legacyRecordedPayload + ';', '')
+        [Environment]::SetEnvironmentVariable('Path', $userPathWithoutLegacy, 'User')
+    }
+    }
 
     # 7. Fail-closed uninstall (ACL injection)
     Copy-Item -LiteralPath (Join-Path $InstallDirectory 'Uninstall.exe') -Destination $uninstallerRunner
@@ -477,6 +752,9 @@ try {
         if (-not (Test-Path -LiteralPath $productKey)) {
             throw 'Fail-closed uninstaller deleted product metadata key despite failure.'
         }
+        if (-not (Test-Path -LiteralPath $stableLauncher)) {
+            throw 'Fail-closed uninstaller deleted stable launcher despite failure.'
+        }
         $automated.uninstallFailureRetainsPayload = $true
     } finally {
         try {
@@ -487,7 +765,6 @@ try {
             $aclKey.Close()
         }
     }
-
     # 8. Clean uninstall
     $uninstallerCleanProc = Start-Process -FilePath $uninstallerRunner -ArgumentList "/S _?=$InstallDirectory" -PassThru
     if (-not $uninstallerCleanProc.WaitForExit(60000)) {
@@ -508,12 +785,15 @@ try {
     if (Test-Path -LiteralPath $payloadRoot2) {
         throw 'Uninstall left payload directory behind.'
     }
+    if (Test-Path -LiteralPath $stableLauncher) { throw 'Uninstall left the stable launcher behind.' }
+    if ([Environment]::GetEnvironmentVariable('Path', 'User') -cne $userPathBefore) { throw 'Uninstall did not preserve the original User PATH.' }
+    $automated.ownedPathRemovedOrUserPathPreserved = $true
     $automated.uninstallClean = $true
     $automated.uninstallRegistrationClean = $true
 
     $smokeSuccess = $true
     if ($AutomatedOnly) {
-        $smokeNotes = 'Automated subset exercised installed registry values, payload, local headless upload, CLI help, same-version update, and uninstall. Operator Explorer UI checks and legacy migration were not exercised.'
+        $smokeNotes = 'Automated installer and CLI checks passed; automatedChecks records the exercised scenarios. Operator Explorer UI observations were not exercised.'
     } else {
         $smokeNotes = 'Interactive surface observations and automated lifecycle checks passed. Full acceptance additionally requires exercised real old-package migration.'
     }

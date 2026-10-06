@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory = $true)] [string] $InstallerPath,
     [Parameter(Mandatory = $true)] [string] $Version,
     [string] $DesktopPath,
+    [string] $LauncherPath,
+    [string] $ExpectedLauncherFormat = '1',
     [switch] $Signed,
     [string] $SourceRoot
 )
@@ -106,6 +108,24 @@ if (-not [string]::IsNullOrWhiteSpace($DesktopPath)) {
     }
     if (-not [PeIconValidator]::HasGroupIcon($DesktopPath)) {
         throw "Desktop binary lacks required embedded RT_GROUP_ICON resource: $DesktopPath"
+    }
+    $desktopVersion = (Get-Item -LiteralPath $DesktopPath).VersionInfo
+    if ($desktopVersion.ProductVersion -ne $Version) {
+        throw "Desktop binary ProductVersion mismatch: expected $Version, got $($desktopVersion.ProductVersion)"
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($LauncherPath)) {
+    if (-not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) {
+        throw "Launcher executable not found for validation: $LauncherPath"
+    }
+    $launcherVersion = (Get-Item -LiteralPath $LauncherPath).VersionInfo
+    if ($launcherVersion.ProductVersion -ne $Version) {
+        throw "Launcher binary ProductVersion mismatch: expected $Version, got $($launcherVersion.ProductVersion)"
+    }
+    $launcherFormatOutput = (& $LauncherPath --launcher-format).Trim()
+    if ($launcherFormatOutput -ne $ExpectedLauncherFormat) {
+        throw "Launcher --launcher-format mismatch: expected '$ExpectedLauncherFormat', got '$launcherFormatOutput'"
     }
 }
 
