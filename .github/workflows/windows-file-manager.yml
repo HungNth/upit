@@ -63,6 +63,7 @@ jobs:
           } finally { $env:GOFLAGS = $prior }
           if (-not $failed) { throw 'Invalid GOFLAGS must fail the package command.' }
           if (@(Get-ChildItem .build/package -ErrorAction SilentlyContinue).Count -ne 0) { throw 'Failed build leaked private staging.' }
+          $global:LASTEXITCODE = 0
       - name: Upload unsigned consumer artifact
         uses: actions/upload-artifact@v4
         with:
