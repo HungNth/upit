@@ -48,7 +48,7 @@ jobs:
           if ($files.Count -ne 3) { throw 'Expected setup, checksum, and metadata only.' }
           .\packaging\windows\validate.ps1 -InstallerPath dist/windows/upit-windows-x64-0.0.0-setup.exe -Version 0.0.0
       - name: Exercise unsigned installed product
-        shell: pwsh
+        shell: powershell
         run: |
           .\packaging\windows\native-smoke.ps1 -InstallerPath dist/windows/upit-windows-x64-0.0.0-setup.exe -InstallDirectory (Join-Path $env:RUNNER_TEMP 'Upit unsigned smoke') -AutomatedOnly -EvidencePath hosted-smoke-evidence.json
       - name: Prove failed-build staging cleanup
@@ -121,7 +121,7 @@ jobs:
             Remove-Item -LiteralPath $certificate -Force -ErrorAction SilentlyContinue
           }
       - name: Verify release artifact and optional trust
-        shell: pwsh
+        shell: powershell
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
           $installer = (Get-Item "dist/windows/upit-windows-x64-$version-setup.exe").FullName
@@ -154,7 +154,7 @@ jobs:
           name: upit-windows-x64-unsigned
           path: dist/windows/
       - name: Observe actual Explorer and Desktop lifecycle
-        shell: pwsh
+        shell: powershell
         env:
           UPIT_LEGACY_INSTALLER_PATH: ${{ vars.UPIT_LEGACY_INSTALLER_PATH }}
         run: |

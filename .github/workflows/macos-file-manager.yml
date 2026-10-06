@@ -35,9 +35,9 @@ jobs:
       - name: Run Go vet
         run: go vet ./...
       - name: Run native Finder selection tests
-        run: native/macos/finder-service/test.sh
+        run: bash native/macos/finder-service/test.sh
       - name: Run native clean-success notification tests
-        run: native/macos/feedback/test.sh
+        run: bash native/macos/feedback/test.sh
       - name: Verify CLI build and cleanup command contract
         run: bash packaging/command-smoke.sh
       - name: Build and verify unsigned package
