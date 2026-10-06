@@ -371,8 +371,12 @@ try {
     }
     [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
     $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('HungNth.Upit')
-    if ($null -eq $notifier -or $notifier.Setting -ne [Windows.UI.Notifications.NotificationSetting]::Enabled) {
-        throw "WinRT ToastNotifier setting is not Enabled for HungNth.Upit: $($notifier.Setting)"
+    if ($null -eq $notifier) {
+        throw 'WinRT ToastNotificationManager failed to create ToastNotifier for HungNth.Upit.'
+    }
+    $setting = $notifier.Setting
+    if ($null -ne $setting -and $setting -ne [Windows.UI.Notifications.NotificationSetting]::Enabled) {
+        throw "WinRT ToastNotifier setting is disabled for HungNth.Upit: $setting"
     }
     $automated.startMenuShortcutPresent = $true
     $automated.winrtNotifierEnabled = $true
