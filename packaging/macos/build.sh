@@ -3,7 +3,7 @@ set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUTPUT_DIRECTORY="$SOURCE_ROOT/dist/macos"
-VERSION="0.0.0"
+VERSION=""
 BUILD_VERSION=""
 SIGNING_IDENTITY="${MACOS_SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${MACOS_NOTARY_PROFILE:-}"
@@ -37,6 +37,13 @@ while (($# > 0)); do
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
+if [[ -z "$VERSION" ]]; then
+    if [[ -f "$SOURCE_ROOT/VERSION" ]]; then
+        VERSION="$(tr -d '[:space:]' < "$SOURCE_ROOT/VERSION")"
+    else
+        VERSION="0.9.0"
+    fi
+fi
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Version must follow semantic versioning: X.Y.Z" >&2
@@ -95,9 +102,10 @@ staged_cli="$staged_bin/upit"
 staged_desktop="$staged_bin/upit-desktop"
 staged_file_manager="$staged_bin/upit-file-manager"
 
-go build -o "$staged_cli" "$SOURCE_ROOT/cmd/upit"
-go build -o "$staged_file_manager" "$SOURCE_ROOT/cmd/upit-file-manager"
-go build -o "$staged_desktop" "$SOURCE_ROOT/cmd/upit-desktop"
+version_ldflags="-X github.com/HungNth/upit/internal/version.version=$VERSION"
+go build -ldflags "$version_ldflags" -o "$staged_cli" "$SOURCE_ROOT/cmd/upit"
+go build -ldflags "$version_ldflags" -o "$staged_file_manager" "$SOURCE_ROOT/cmd/upit-file-manager"
+go build -ldflags "$version_ldflags" -o "$staged_desktop" "$SOURCE_ROOT/cmd/upit-desktop"
 
 # Step 3: Compile private staged Finder service adapter
 staged_adapter="$staged_bin/UpitFinderService"

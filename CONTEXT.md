@@ -39,6 +39,10 @@ _Avoid_: Result URL, Output URL
 **CLI**:
 The public command-line interface of Upit for terminal and automated use.
 
+**Product Version**:
+The authoritative SemVer identity of the overall Upit release, shared across CLI, Desktop, private platform helpers, installers, and system metadata.
+_Avoid_: Version, Config version, Launcher format
+
 **Active Payload**:
 The version-aligned set of Upit executables selected to serve new invocations on an installed system.
 _Avoid_: Current folder, Launcher files

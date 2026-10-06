@@ -3,7 +3,10 @@ CMD_DIR := ./cmd/upit
 DESKTOP_CMD_DIR := ./cmd/upit-desktop
 DESKTOP_FRONTEND_DIR := $(DESKTOP_CMD_DIR)/frontend
 BUILD_DIR := bin
-VERSION ?= 0.0.0
+VERSION ?= $(strip $(file < VERSION))
+ifeq ($(VERSION),)
+    VERSION := 0.9.0
+endif
 
 ifeq ($(OS),Windows_NT)
     DETECTED_OS := Windows
@@ -33,7 +36,7 @@ export WINDOWS_CERTIFICATE_PATH WINDOWS_CERTIFICATE_PASSWORD WINDOWS_TIMESTAMP_S
 
 ## build: Build only the native standalone CLI
 build: $(BUILD_DIR)
-	go build -o "$(TARGET)" $(CMD_DIR)
+	go build -ldflags "-X github.com/HungNth/upit/internal/version.version=$(VERSION)" -o "$(TARGET)" $(CMD_DIR)
 	@echo Built $(TARGET) for $(DETECTED_OS)
 
 $(BUILD_DIR):

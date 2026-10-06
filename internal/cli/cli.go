@@ -9,8 +9,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/HungNth/upit/internal/app"
-	"github.com/spf13/pflag"
+ 	"github.com/HungNth/upit/internal/app"
+	"github.com/HungNth/upit/internal/version"
+ 	"github.com/spf13/pflag"
 )
 
 const helpText = `Usage:
@@ -67,6 +68,9 @@ func (r Runner) Run(ctx context.Context, args []string, stdout, stderr io.Writer
 			return 1
 		}
 		return 0
+	}
+	if isVersionCommand(args) {
+		return r.runVersion(args, stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "config" {
 		return r.runConfig(args[1:], stdout, stderr)
@@ -166,6 +170,50 @@ func helpFor(args []string) (string, bool) {
 	}
 	return "", false
 }
+func isVersionCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "version", "--version", "-v":
+		return true
+	default:
+		return false
+	}
+}
+
+func (r Runner) runVersion(args []string, stdout, stderr io.Writer) int {
+	flags := pflag.NewFlagSet("version", pflag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "write machine-readable output")
+
+	subArgs := args[1:]
+	if err := flags.Parse(subArgs); err != nil {
+		fmt.Fprintf(stderr, "unknown flag: %v\n", err)
+		fmt.Fprintln(stderr, "usage: upit version [--json]")
+		return 2
+	}
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument: %s\n", flags.Arg(0))
+		fmt.Fprintln(stderr, "usage: upit version [--json]")
+		return 2
+	}
+
+	info := version.Get()
+	if *jsonOutput {
+		encoder := json.NewEncoder(stdout)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(info); err != nil {
+			fmt.Fprintf(stderr, "encode version: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	fmt.Fprintln(stdout, info.String())
+	return 0
+}
+
 
 func (r Runner) runConfig(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {

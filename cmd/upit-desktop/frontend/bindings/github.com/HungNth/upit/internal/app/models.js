@@ -20,6 +20,7 @@ export const DesktopStartupMode = {
 /**
  * @typedef {Object} DesktopStartupState
  * @property {DesktopStartupMode} mode
+ * @property {string} productVersion
  * @property {string} configurationPath
  * @property {string} defaultUploader
  * @property {string} defaultShortener

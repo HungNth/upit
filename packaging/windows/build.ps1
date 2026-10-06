@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string] $Version = '0.0.0',
+    [string] $Version,
     [string] $CertificatePath = $env:WINDOWS_CERTIFICATE_PATH,
     [string] $CertificatePassword = $env:WINDOWS_CERTIFICATE_PASSWORD,
     [string] $TimestampServer = $(if ($env:WINDOWS_TIMESTAMP_SERVER) { $env:WINDOWS_TIMESTAMP_SERVER } else { 'http://timestamp.digicert.com' }),
@@ -19,12 +19,19 @@ if ($env:OS -ne 'Windows_NT' -or $arch -ne 'AMD64' -or [Environment]::OSVersion.
     throw 'Desktop packaging requires a native Windows 11 x64 host.'
 }
 
-if ($Version -notmatch '^\d+\.\d+\.\d+$') {
-    throw "Product version must have three numeric components (X.Y.Z), received '$Version'."
-}
-
 if ([string]::IsNullOrWhiteSpace($SourceRoot)) {
     $SourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+}
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $versionFile = Join-Path $SourceRoot 'VERSION'
+    if (Test-Path -LiteralPath $versionFile) {
+        $Version = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+    } else {
+        $Version = '0.9.0'
+    }
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Product version must have three numeric components (X.Y.Z), received '$Version'."
 }
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $SourceRoot 'dist\windows'
@@ -134,16 +141,17 @@ END
     New-Item -ItemType Directory -Path (Split-Path $dstFrontendDist) -Force | Out-Null
     Copy-Item -LiteralPath $srcFrontendDist -Destination $dstFrontendDist -Recurse -Force
 
-    & $go build -o $stagedCli $cliDir
+    $versionLdflags = "-X github.com/HungNth/upit/internal/version.version=$Version"
+    & $go build -ldflags $versionLdflags -o $stagedCli $cliDir
     if ($LASTEXITCODE -ne 0) { throw "Building CLI failed with exit code $LASTEXITCODE." }
 
-    & $go build -ldflags '-H=windowsgui' -o $stagedFileManager $fmDir
+    & $go build -ldflags "-H=windowsgui $versionLdflags" -o $stagedFileManager $fmDir
     if ($LASTEXITCODE -ne 0) { throw "Building file manager helper failed with exit code $LASTEXITCODE." }
 
-    & $go build -ldflags '-H=windowsgui' -o $stagedDesktop $desktopDir
+    & $go build -ldflags "-H=windowsgui $versionLdflags" -o $stagedDesktop $desktopDir
     if ($LASTEXITCODE -ne 0) { throw "Building desktop executable failed with exit code $LASTEXITCODE." }
 
-    & $go build -o $stagedInstall $installDir
+    & $go build -ldflags $versionLdflags -o $stagedInstall $installDir
     if ($LASTEXITCODE -ne 0) { throw "Building install worker failed with exit code $LASTEXITCODE." }
 
     $launcherLdflags = "-X main.launcherFormat=$LauncherFormat"

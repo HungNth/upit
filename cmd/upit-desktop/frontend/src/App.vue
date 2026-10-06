@@ -1221,12 +1221,17 @@ onUnmounted(() => {
       </section>
 
       <div class="sidebar-footer">
-        <span class="status-dot" :class="state?.mode ?? 'loading'" aria-hidden="true"></span>
-        <span v-if="loading">Loading Configuration Set…</span>
-        <span v-else-if="error">Desktop unavailable</span>
-        <span v-else-if="state?.mode === 'normal'">Configuration Set ready</span>
-        <span v-else-if="state?.mode === 'setup'">Setup required</span>
-        <span v-else>Repair required</span>
+        <div class="sidebar-status">
+          <span class="status-dot" :class="state?.mode ?? 'loading'" aria-hidden="true"></span>
+          <span v-if="loading">Loading Configuration Set…</span>
+          <span v-else-if="error">Desktop unavailable</span>
+          <span v-else-if="state?.mode === 'normal'">Configuration Set ready</span>
+          <span v-else-if="state?.mode === 'setup'">Setup required</span>
+          <span v-else>Repair required</span>
+        </div>
+        <div class="sidebar-version" data-testid="sidebar-version">
+          Upit v{{ state?.productVersion || '0.9.0' }}
+        </div>
       </div>
     </aside>
 

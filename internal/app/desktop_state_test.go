@@ -23,6 +23,9 @@ func TestDesktopStartupStateClassifiesMissingConfigurationDirectoryAsSetup(t *te
 	if state.Diagnostic != "" {
 		t.Fatalf("diagnostic = %q, want empty setup diagnostic", state.Diagnostic)
 	}
+	if state.ProductVersion != "0.9.0" {
+		t.Fatalf("product version = %q, want %q", state.ProductVersion, "0.9.0")
+	}
 }
 
 func TestDesktopStartupStateClassifiesEmptyConfigurationDirectoryAsSetup(t *testing.T) {

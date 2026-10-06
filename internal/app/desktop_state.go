@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	"github.com/HungNth/upit/internal/version"
 )
 
 type DesktopStartupMode string
@@ -17,9 +19,10 @@ const (
 )
 
 type DesktopStartupState struct {
-	Mode              DesktopStartupMode `json:"mode"`
-	ConfigurationPath string             `json:"configurationPath"`
-	DefaultUploader   string             `json:"defaultUploader"`
+ 	Mode              DesktopStartupMode `json:"mode"`
+	ProductVersion    string             `json:"productVersion"`
+ 	ConfigurationPath string             `json:"configurationPath"`
+ 	DefaultUploader   string             `json:"defaultUploader"`
 	DefaultShortener  string             `json:"defaultShortener"`
 	CopyToClipboard   bool               `json:"copyToClipboard"`
 	Uploaders         []string           `json:"uploaders"`
@@ -43,6 +46,7 @@ func (s Service) DesktopStartupState() (DesktopStartupState, error) {
 
 	configurationPath := absolutePath(filepath.Join(home, ".config", "upit"))
 	state := DesktopStartupState{
+		ProductVersion:    version.Get().Version,
 		ConfigurationPath: configurationPath,
 	}
 	info, err := os.Stat(configurationPath)
