@@ -281,7 +281,7 @@ func TestFormUploadTimeoutCancelsTransformedRequest(t *testing.T) {
 	}, map[string]any{
 		"url": map[string]any{"type": "body"},
 	}, []byte("payload"))
-	if err := os.Truncate(filePath, 4<<20); err != nil {
+	if err := os.Truncate(filePath, 1<<20); err != nil {
 		t.Fatal(err)
 	}
 

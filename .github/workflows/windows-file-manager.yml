@@ -40,7 +40,7 @@ jobs:
       - name: Go vet
         run: go vet ./...
       - name: Build unsigned consumer package
-        run: make package
+        run: make package VERSION=0.0.0
       - name: Validate consumer sidecars and output boundaries
         shell: pwsh
         run: |
@@ -58,7 +58,7 @@ jobs:
           $env:GOFLAGS = '-upit-invalid-package-smoke-flag'
           $PSNativeCommandUseErrorActionPreference = $false
           try {
-            make package
+            make package VERSION=0.0.0
             $failed = $LASTEXITCODE -ne 0
           } finally { $env:GOFLAGS = $prior }
           if (-not $failed) { throw 'Invalid GOFLAGS must fail the package command.' }
